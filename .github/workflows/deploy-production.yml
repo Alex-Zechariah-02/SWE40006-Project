@@ -54,7 +54,7 @@ jobs:
               return shlex.quote(value)
 
           commands = [
-              'set -euo pipefail',
+              'set -eu',
               f"APP_DIR={q(os.environ['APP_DIR'])}",
               f"REPOSITORY_URL={q(os.environ['REPOSITORY_URL'])}",
               f"COMPOSE_FILE={q(os.environ['COMPOSE_FILE'])}",
