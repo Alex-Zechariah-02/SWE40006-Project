@@ -1,0 +1,22 @@
+{
+  "name": "@balance/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev --port 3000",
+    "lint": "pnpm exec eslint . --max-warnings 0",
+    "start": "next start --hostname 0.0.0.0 --port 3000",
+    "typecheck": "pnpm exec tsc --noEmit -p tsconfig.json",
+    "test": "pnpm exec vitest run --config vitest.config.ts src"
+  },
+  "dependencies": {
+    "@balance/config": "workspace:*",
+    "@balance/types": "workspace:*",
+    "@balance/ui": "workspace:*",
+    "next": "16.2.4",
+    "react": "19.2.5",
+    "react-dom": "19.2.5",
+    "tailwindcss": "4.2.4"
+  }
+}

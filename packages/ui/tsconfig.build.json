@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "types": [],
+    "baseUrl": ".",
+    "paths": {},
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "sourceMap": true,
+    "jsx": "react-jsx"
+  },
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+}

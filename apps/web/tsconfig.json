@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "preserve",
+    "noEmit": true,
+    "baseUrl": "../../",
+    "paths": {
+      "@balance/types": ["packages/types/src/index.ts"],
+      "@balance/utils": ["packages/utils/src/index.ts"],
+      "@balance/config": ["packages/config/src/index.ts"],
+      "@balance/ui": ["packages/ui/src/index.ts"]
+    },
+    "plugins": [{ "name": "next" }],
+    "types": ["vitest/globals"]
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}

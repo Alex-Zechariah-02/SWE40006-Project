@@ -1,0 +1,23 @@
+{
+  "name": "@balance/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "pnpm exec tsc -p tsconfig.main.json && pnpm exec vite build",
+    "dev": "pnpm run build && pnpm exec electron dist/main/main.js",
+    "lint": "pnpm exec eslint src vite.config.ts --ext .ts,.tsx",
+    "test": "pnpm exec vitest run --config vite.config.ts src/renderer/App.test.tsx",
+    "typecheck": "pnpm exec tsc --noEmit -p tsconfig.json && pnpm exec tsc --noEmit -p tsconfig.vite.json"
+  },
+  "dependencies": {
+    "@balance/config": "workspace:*",
+    "electron": "41.3.0",
+    "react": "19.2.5",
+    "react-dom": "19.2.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.9.1",
+    "@vitejs/plugin-react": "6.0.1",
+    "vite": "8.0.9"
+  }
+}
