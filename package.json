@@ -1,0 +1,34 @@
+{
+  "name": "balance-platform",
+  "private": true,
+  "packageManager": "pnpm@10.33.1",
+  "engines": {
+    "node": "24.15.0"
+  },
+  "scripts": {
+    "dev": "pnpm build && turbo run dev --parallel --filter=@balance/web --filter=@balance/api",
+    "dev:web": "pnpm --filter @balance/web dev",
+    "dev:api": "pnpm --filter @balance/api dev",
+    "dev:desktop": "pnpm --filter @balance/desktop dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@tailwindcss/postcss": "4.2.4",
+    "@types/node": "24.9.1",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "@vitejs/plugin-react": "6.0.1",
+    "eslint": "10.2.1",
+    "globals": "16.4.0",
+    "prettier": "3.8.3",
+    "tsx": "4.20.0",
+    "turbo": "2.9.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.58.1",
+    "vitest": "4.1.5"
+  }
+}
