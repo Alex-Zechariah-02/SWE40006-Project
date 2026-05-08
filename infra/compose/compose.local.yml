@@ -1,0 +1,56 @@
+name: balance-local
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      APP_NAME: ${APP_NAME:-Balance}
+      PRODUCT_NAME: ${PRODUCT_NAME:-Balance}
+      PROJECT_SLUG: ${PROJECT_SLUG:-balance}
+      DEPLOYMENT_NAMESPACE: ${DEPLOYMENT_NAMESPACE:-swe40006-project}
+      APP_ENV: local
+      NODE_ENV: ${NODE_ENV:-development}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      GIT_COMMIT: ${GIT_COMMIT:-local}
+      BUILD_ID: ${BUILD_ID:-local-build}
+      API_PORT: 3001
+    ports:
+      - '3001:3001'
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+      args:
+        API_BASE_PATH: ${API_BASE_PATH:-/api}
+        API_PROXY_TARGET: ${API_PROXY_TARGET:-http://api:3001}
+        NEXT_PUBLIC_API_BASE_PATH: ${NEXT_PUBLIC_API_BASE_PATH:-/api}
+    depends_on:
+      - api
+    environment:
+      APP_NAME: ${APP_NAME:-Balance}
+      PRODUCT_NAME: ${PRODUCT_NAME:-Balance}
+      PROJECT_SLUG: ${PROJECT_SLUG:-balance}
+      DEPLOYMENT_NAMESPACE: ${DEPLOYMENT_NAMESPACE:-swe40006-project}
+      APP_ENV: local
+      NODE_ENV: ${NODE_ENV:-development}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      GIT_COMMIT: ${GIT_COMMIT:-local}
+      BUILD_ID: ${BUILD_ID:-local-build}
+      WEB_PORT: 3000
+      API_PORT: 3001
+      PUBLIC_HTTP_PORT: ${PUBLIC_HTTP_PORT:-3000}
+      API_BASE_URL: ${API_BASE_URL:-http://api:3001}
+      API_PROXY_TARGET: ${API_PROXY_TARGET:-http://api:3001}
+      API_BASE_PATH: ${API_BASE_PATH:-/api}
+      API_HEALTH_PATH: ${API_HEALTH_PATH:-/api/health}
+      API_VERSION_PATH: ${API_VERSION_PATH:-/api/version}
+      NEXT_PUBLIC_API_BASE_PATH: ${NEXT_PUBLIC_API_BASE_PATH:-/api}
+      NEXT_PUBLIC_API_HEALTH_PATH: ${NEXT_PUBLIC_API_HEALTH_PATH:-/api/health}
+      NEXT_PUBLIC_API_VERSION_PATH: ${NEXT_PUBLIC_API_VERSION_PATH:-/api/version}
+    ports:
+      - '3000:3000'
+    restart: unless-stopped
