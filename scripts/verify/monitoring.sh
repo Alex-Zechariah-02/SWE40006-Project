@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/verify/monitoring.sh
-# Verifies that the Level 2 observability stack is healthy on the production server.
-# Run this on the production EC2 host after the monitoring stack is deployed.
+# Verifies that the observability stack is healthy on the target host.
+# Run this on the target EC2 host after the monitoring stack is deployed.
 
 set -euo pipefail
 
@@ -18,6 +18,38 @@ check() {
     echo "  FAIL  $label"
     FAIL=$((FAIL + 1))
   fi
+}
+
+validate_prometheus_targets() {
+  local targets_json
+  targets_json="$(curl -fsSL http://127.0.0.1:9090/api/v1/targets)"
+
+  TARGETS_JSON="$targets_json" python3 - <<'PY'
+import json
+import os
+import sys
+
+payload = json.loads(os.environ["TARGETS_JSON"])
+active_targets = payload.get("data", {}).get("activeTargets", [])
+
+expected = {"prometheus", "node_exporter", "cadvisor"}
+healthy = set()
+
+for target in active_targets:
+  labels = target.get("labels", {}) or {}
+  discovered = target.get("discoveredLabels", {}) or {}
+  job = labels.get("job") or discovered.get("__meta_prometheus_job")
+  health = target.get("health")
+  if job in expected and health == "up":
+    healthy.add(job)
+
+missing = sorted(expected - healthy)
+if missing:
+  print("Missing or unhealthy Prometheus targets: " + ", ".join(missing), file=sys.stderr)
+  sys.exit(1)
+
+print("Expected Prometheus targets are up: " + ", ".join(sorted(healthy)))
+PY
 }
 
 echo ""
@@ -38,7 +70,7 @@ echo ""
 echo "-- Prometheus --"
 check "Prometheus health endpoint responds"   "curl -fsSL http://127.0.0.1:9090/-/healthy"
 check "Prometheus targets endpoint responds"  "curl -fsSL http://127.0.0.1:9090/api/v1/targets"
-check "cAdvisor metrics reachable internally" "docker exec balance-prometheus wget -qO- http://cadvisor:8080/metrics | head -1"
+check "Expected Prometheus targets are healthy" "validate_prometheus_targets"
 
 echo ""
 echo "-- Grafana --"

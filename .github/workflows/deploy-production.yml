@@ -25,6 +25,7 @@ jobs:
       APP_DIR: /opt/swe40006-project
       APP_URL: ${{ secrets.PRODUCTION_APP_URL }}
       API_URL: ${{ secrets.PRODUCTION_API_URL }}
+      GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
       GIT_COMMIT: ${{ github.sha }}
       BUILD_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
       REPOSITORY_URL: https://github.com/Alex-Zechariah-02/SWE40006-Project.git
@@ -62,10 +63,11 @@ jobs:
               f"GIT_COMMIT={q(os.environ['GIT_COMMIT'])}",
               f"GITHUB_SHA={q(os.environ['GIT_COMMIT'])}",
               f"BUILD_ID={q(os.environ['BUILD_ID'])}",
+              f"GRAFANA_ADMIN_PASSWORD={q(os.environ['GRAFANA_ADMIN_PASSWORD'])}",
               'install -d -m 0755 "$APP_DIR"',
               'chown -R ubuntu:ubuntu "$APP_DIR"',
               'chmod 0755 "$APP_DIR"',
-              "sudo -H -u ubuntu env HOME=/home/ubuntu APP_DIR=\"$APP_DIR\" REPOSITORY_URL=\"$REPOSITORY_URL\" COMPOSE_FILE=\"$COMPOSE_FILE\" APP_ENV=\"$APP_ENV\" GIT_COMMIT=\"$GIT_COMMIT\" GITHUB_SHA=\"$GITHUB_SHA\" BUILD_ID=\"$BUILD_ID\" bash -lc 'set -euo pipefail; if [ ! -d \"$APP_DIR/.git\" ]; then git clone \"$REPOSITORY_URL\" \"$APP_DIR\"; fi; cd \"$APP_DIR\"; git remote set-url origin \"$REPOSITORY_URL\"; git fetch --prune origin main; git checkout -B main origin/main; git reset --hard \"$GIT_COMMIT\"; cd \"$APP_DIR\"; bash scripts/deploy/ssm-deploy.sh'",
+              "sudo -H -u ubuntu env HOME=/home/ubuntu APP_DIR=\"$APP_DIR\" REPOSITORY_URL=\"$REPOSITORY_URL\" COMPOSE_FILE=\"$COMPOSE_FILE\" APP_ENV=\"$APP_ENV\" GIT_COMMIT=\"$GIT_COMMIT\" GITHUB_SHA=\"$GITHUB_SHA\" BUILD_ID=\"$BUILD_ID\" GRAFANA_ADMIN_PASSWORD=\"$GRAFANA_ADMIN_PASSWORD\" bash -lc 'set -euo pipefail; if [ ! -d \"$APP_DIR/.git\" ]; then git clone \"$REPOSITORY_URL\" \"$APP_DIR\"; fi; cd \"$APP_DIR\"; git remote set-url origin \"$REPOSITORY_URL\"; git fetch --prune origin main; git checkout -B main origin/main; git reset --hard \"$GIT_COMMIT\"; cd \"$APP_DIR\"; bash scripts/deploy/ssm-deploy.sh'",
           ]
 
           request = {

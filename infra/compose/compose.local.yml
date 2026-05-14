@@ -52,5 +52,8 @@ services:
       NEXT_PUBLIC_API_HEALTH_PATH: ${NEXT_PUBLIC_API_HEALTH_PATH:-/api/health}
       NEXT_PUBLIC_API_VERSION_PATH: ${NEXT_PUBLIC_API_VERSION_PATH:-/api/version}
     ports:
-      - '3000:3000'
+      - target: 3000
+        published: 3000
+        protocol: tcp
+        mode: host
     restart: unless-stopped

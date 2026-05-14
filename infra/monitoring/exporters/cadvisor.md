@@ -6,12 +6,12 @@ endpoint at port 8080.
 
 ## Version used
 
-`ghcr.io/google/cadvisor:v0.56.2`
+`ghcr.io/google/cadvisor:0.56.2`
 
 ## How it runs
 
-cAdvisor runs as a Docker container in the production Compose stack
-(`infra/compose/compose.production.yml`). It is NOT publicly exposed.
+cAdvisor runs as a Docker container in the staging and production Compose stacks.
+It is NOT publicly exposed.
 Prometheus scrapes it on the internal Docker network at `cadvisor:8080`.
 
 ## Why privileged mode is required

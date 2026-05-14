@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install-node-exporter.sh
-# Installs node_exporter 1.11.1 as a native host service on the production EC2.
-# Run this directly on the production server (via SSH or SSM session).
+# Installs node_exporter 1.11.1 as a native host service on the target EC2 host.
+# Run this directly on the target EC2 host (via SSH or SSM session).
 # Must be run as a user with sudo privileges.
 
 set -euo pipefail
@@ -71,4 +71,4 @@ curl -fsSL http://127.0.0.1:9100/metrics | head -5
 
 echo ""
 echo "node_exporter ${NODE_EXPORTER_VERSION} installed and running."
-echo "Port 9100 is host-only. Do NOT open it in the AWS security group."
+echo "node_exporter listens on the host for Prometheus scraping. Do not open TCP 9100 in the AWS security group."

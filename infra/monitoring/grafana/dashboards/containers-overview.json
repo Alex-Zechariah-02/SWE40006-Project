@@ -13,11 +13,11 @@
       "title": "Container CPU Usage %",
       "type": "timeseries",
       "gridPos": { "x": 0, "y": 0, "w": 24, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "rate(container_cpu_usage_seconds_total{id=~\"/docker/.*\"}[2m]) * 100",
-          "legendFormat": "{{id}}",
+          "expr": "rate(container_cpu_usage_seconds_total{name!=\"\"}[2m]) * 100",
+          "legendFormat": "{{name}}",
           "refId": "A"
         }
       ],
@@ -34,11 +34,11 @@
       "title": "Container Memory Usage",
       "type": "timeseries",
       "gridPos": { "x": 0, "y": 8, "w": 24, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "container_memory_usage_bytes{id=~\"/docker/.*\"}",
-          "legendFormat": "{{id}}",
+          "expr": "container_memory_usage_bytes{name!=\"\"}",
+          "legendFormat": "{{name}}",
           "refId": "A"
         }
       ],
@@ -54,11 +54,11 @@
       "title": "Container Network RX",
       "type": "timeseries",
       "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "rate(container_network_receive_bytes_total{id=~\"/docker/.*\"}[2m])",
-          "legendFormat": "{{id}}",
+          "expr": "rate(container_network_receive_bytes_total{name!=\"\"}[2m])",
+          "legendFormat": "{{name}}",
           "refId": "A"
         }
       ],
@@ -74,11 +74,11 @@
       "title": "Container Network TX",
       "type": "timeseries",
       "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "rate(container_network_transmit_bytes_total{id=~\"/docker/.*\"}[2m])",
-          "legendFormat": "{{id}}",
+          "expr": "rate(container_network_transmit_bytes_total{name!=\"\"}[2m])",
+          "legendFormat": "{{name}}",
           "refId": "A"
         }
       ],

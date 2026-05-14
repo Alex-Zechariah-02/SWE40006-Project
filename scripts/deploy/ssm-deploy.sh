@@ -20,6 +20,7 @@ require_var COMPOSE_FILE
 require_var APP_ENV
 require_var GIT_COMMIT
 require_var BUILD_ID
+require_var GRAFANA_ADMIN_PASSWORD
 
 current_user="$(id -un)"
 
@@ -94,6 +95,7 @@ export API_VERSION_PATH="${API_VERSION_PATH:-/api/version}"
 export NEXT_PUBLIC_API_BASE_PATH="${NEXT_PUBLIC_API_BASE_PATH:-$API_BASE_PATH}"
 export NEXT_PUBLIC_API_HEALTH_PATH="${NEXT_PUBLIC_API_HEALTH_PATH:-$API_HEALTH_PATH}"
 export NEXT_PUBLIC_API_VERSION_PATH="${NEXT_PUBLIC_API_VERSION_PATH:-$API_VERSION_PATH}"
+export GRAFANA_ADMIN_PASSWORD
 
 docker compose -f "$COMPOSE_FILE" down --remove-orphans
 docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
