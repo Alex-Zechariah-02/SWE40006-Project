@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": "../../",
+    "paths": {
+      "@balance/db": ["packages/db/src/index.ts"],
+      "@balance/types": ["packages/types/src/index.ts"],
+      "@balance/utils": ["packages/utils/src/index.ts"]
+    },
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/**/*.ts", "prisma/**/*.ts"]
+}
+

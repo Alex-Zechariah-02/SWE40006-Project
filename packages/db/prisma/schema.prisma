@@ -1,0 +1,245 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  consumer
+  reviewer
+  admin
+}
+
+enum DocumentStatus {
+  uploaded
+  queued
+  processing
+  extracted
+  correction_required
+  corrected
+  submitted
+  reviewed
+  rejected
+  failed
+}
+
+enum ExtractionJobStatus {
+  queued
+  processing
+  completed
+  failed
+}
+
+enum ExtractionProvider {
+  tesseract
+  textract
+  manual
+}
+
+enum ClaimStatus {
+  submitted
+  under_review
+  approved
+  rejected
+}
+
+enum ReviewStatus {
+  pending
+  in_review
+  approved
+  rejected
+}
+
+enum FieldName {
+  merchantName
+  documentDate
+  amountMinor
+  currency
+}
+
+enum FieldSource {
+  ocr
+  manual
+  system
+}
+
+enum EntityType {
+  document
+  extraction_job
+  claim
+  review
+}
+
+model User {
+  id           String  @id @default(uuid()) @db.Uuid
+  email        String  @unique
+  passwordHash String
+  displayName  String
+  role         Role
+
+  documents  Document[]   @relation("UserDocuments")
+  claims     Claim[]      @relation("UserClaims")
+  reviews    Review[]     @relation("UserReviews")
+  auditEvents AuditEvent[] @relation("UserAuditEvents")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Organization {
+  id        String     @id @default(uuid()) @db.Uuid
+  name      String     @unique
+  documents Document[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Document {
+  id             String        @id @default(uuid()) @db.Uuid
+  ownerId        String        @db.Uuid
+  organizationId String?       @db.Uuid
+  originalFilename String
+  contentType    String
+  sizeBytes      Int
+  storageKey     String
+  status         DocumentStatus
+
+  merchantName String?
+  documentDate String?
+  amountMinor  Int?
+  currency     String?
+
+  owner        User          @relation("UserDocuments", fields: [ownerId], references: [id], onDelete: Restrict)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  fields        DocumentField[]
+  extractionJobs ExtractionJob[]
+  claim         Claim?
+  review        Review?
+  auditEvents   AuditEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([organizationId])
+}
+
+model DocumentField {
+  id            String     @id @default(uuid()) @db.Uuid
+  documentId    String     @db.Uuid
+  name          FieldName
+  value         String
+  correctedValue String?
+  confidence    Float?
+  source        FieldSource
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([documentId, name])
+  @@index([documentId])
+}
+
+model ExtractionJob {
+  id          String             @id @default(uuid()) @db.Uuid
+  documentId  String             @db.Uuid
+  status      ExtractionJobStatus
+  provider    ExtractionProvider
+  errorMessage String?
+
+  createdAt   DateTime @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  document   Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  auditEvents AuditEvent[]
+
+  @@index([documentId])
+  @@index([status])
+}
+
+model Claim {
+  id         String      @id @default(uuid()) @db.Uuid
+  documentId String      @unique @db.Uuid
+  consumerId String      @db.Uuid
+  status     ClaimStatus
+  purpose    String
+  note       String?
+
+  submittedAt DateTime
+  decidedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  consumer User     @relation("UserClaims", fields: [consumerId], references: [id], onDelete: Restrict)
+  review   Review?
+  auditEvents AuditEvent[]
+
+  @@index([consumerId])
+  @@index([status])
+}
+
+model Review {
+  id         String      @id @default(uuid()) @db.Uuid
+  claimId    String      @unique @db.Uuid
+  documentId String      @unique @db.Uuid
+  status     ReviewStatus
+  reviewerId String?     @db.Uuid
+  decisionNote String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  decidedAt DateTime?
+
+  claim    Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  reviewer User?    @relation("UserReviews", fields: [reviewerId], references: [id], onDelete: SetNull)
+  auditEvents AuditEvent[]
+
+  @@index([documentId])
+  @@index([status])
+  @@index([reviewerId])
+}
+
+model AuditEvent {
+  id         String    @id @default(uuid()) @db.Uuid
+  action     String
+  entityType EntityType
+  entityId   String
+  actorId    String?   @db.Uuid
+  actorRole  String
+  message    String
+  metadata   Json      @default("{}")
+
+  createdAt DateTime @default(now())
+
+  documentId   String?      @db.Uuid
+  extractionJobId String?   @db.Uuid
+  claimId      String?      @db.Uuid
+  reviewId     String?      @db.Uuid
+
+  actor        User?        @relation("UserAuditEvents", fields: [actorId], references: [id], onDelete: SetNull)
+  document     Document?    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  extractionJob ExtractionJob? @relation(fields: [extractionJobId], references: [id], onDelete: Cascade)
+  claim        Claim?       @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  review       Review?      @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@index([documentId])
+  @@index([extractionJobId])
+  @@index([claimId])
+  @@index([reviewId])
+}
