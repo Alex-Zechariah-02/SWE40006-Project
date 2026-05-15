@@ -12,6 +12,8 @@ FROM base AS build
 COPY . .
 
 RUN pnpm install --frozen-lockfile
+ENV DATABASE_URL=postgresql://balance:balance@postgres:5432/balance?schema=public
+RUN pnpm prisma:generate
 RUN pnpm exec turbo run build --filter=@balance/api
 
 FROM base AS runner
