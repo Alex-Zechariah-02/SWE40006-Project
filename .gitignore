@@ -49,3 +49,9 @@ yarn-error.log*
 *.rar
 
 *.tmp
+
+# Python caches (worker)
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
