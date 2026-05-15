@@ -20,12 +20,15 @@ jobs:
       AWS_REGION: ${{ vars.AWS_REGION }}
       AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
       SSM_INSTANCE_ID: ${{ vars.SSM_INSTANCE_ID }}
+      S3_BUCKET: ${{ vars.S3_BUCKET }}
       SSM_EXECUTION_TIMEOUT_SECONDS: '3600'
       SSM_STATUS_POLL_SECONDS: '10'
       APP_DIR: /opt/swe40006-project
       APP_URL: ${{ secrets.STAGING_APP_URL }}
       API_URL: ${{ secrets.STAGING_API_URL }}
       GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+      JWT_SECRET: ${{ secrets.STAGING_JWT_SECRET }}
+      PASSWORD_PEPPER: ${{ secrets.STAGING_PASSWORD_PEPPER }}
       GIT_COMMIT: ${{ github.sha }}
       BUILD_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
       REPOSITORY_URL: https://github.com/Alex-Zechariah-02/SWE40006-Project.git
@@ -56,6 +59,8 @@ jobs:
 
           commands = [
               'set -eu',
+              f"AWS_REGION={q(os.environ['AWS_REGION'])}",
+              f"S3_BUCKET={q(os.environ['S3_BUCKET'])}",
               f"APP_DIR={q(os.environ['APP_DIR'])}",
               f"REPOSITORY_URL={q(os.environ['REPOSITORY_URL'])}",
               f"COMPOSE_FILE={q(os.environ['COMPOSE_FILE'])}",
@@ -64,10 +69,12 @@ jobs:
               f"GITHUB_SHA={q(os.environ['GIT_COMMIT'])}",
               f"BUILD_ID={q(os.environ['BUILD_ID'])}",
               f"GRAFANA_ADMIN_PASSWORD={q(os.environ['GRAFANA_ADMIN_PASSWORD'])}",
+              f"JWT_SECRET={q(os.environ['JWT_SECRET'])}",
+              f"PASSWORD_PEPPER={q(os.environ['PASSWORD_PEPPER'])}",
               'install -d -m 0755 "$APP_DIR"',
               'chown -R ubuntu:ubuntu "$APP_DIR"',
               'chmod 0755 "$APP_DIR"',
-              "sudo -H -u ubuntu env HOME=/home/ubuntu APP_DIR=\"$APP_DIR\" REPOSITORY_URL=\"$REPOSITORY_URL\" COMPOSE_FILE=\"$COMPOSE_FILE\" APP_ENV=\"$APP_ENV\" GIT_COMMIT=\"$GIT_COMMIT\" GITHUB_SHA=\"$GITHUB_SHA\" BUILD_ID=\"$BUILD_ID\" GRAFANA_ADMIN_PASSWORD=\"$GRAFANA_ADMIN_PASSWORD\" bash -lc 'set -euo pipefail; if [ ! -d \"$APP_DIR/.git\" ]; then git clone \"$REPOSITORY_URL\" \"$APP_DIR\"; fi; cd \"$APP_DIR\"; git remote set-url origin \"$REPOSITORY_URL\"; git fetch --prune origin develop; git checkout -B develop origin/develop; git reset --hard \"$GIT_COMMIT\"; cd \"$APP_DIR\"; bash scripts/deploy/ssm-deploy.sh'",
+              "sudo -H -u ubuntu env HOME=/home/ubuntu AWS_REGION=\"$AWS_REGION\" S3_BUCKET=\"$S3_BUCKET\" APP_DIR=\"$APP_DIR\" REPOSITORY_URL=\"$REPOSITORY_URL\" COMPOSE_FILE=\"$COMPOSE_FILE\" APP_ENV=\"$APP_ENV\" GIT_COMMIT=\"$GIT_COMMIT\" GITHUB_SHA=\"$GITHUB_SHA\" BUILD_ID=\"$BUILD_ID\" GRAFANA_ADMIN_PASSWORD=\"$GRAFANA_ADMIN_PASSWORD\" JWT_SECRET=\"$JWT_SECRET\" PASSWORD_PEPPER=\"$PASSWORD_PEPPER\" bash -lc 'set -euo pipefail; if [ ! -d \"$APP_DIR/.git\" ]; then git clone \"$REPOSITORY_URL\" \"$APP_DIR\"; fi; cd \"$APP_DIR\"; git remote set-url origin \"$REPOSITORY_URL\"; git fetch --prune origin develop; git checkout -B develop origin/develop; git reset --hard \"$GIT_COMMIT\"; cd \"$APP_DIR\"; bash scripts/deploy/ssm-deploy.sh'",
           ]
 
           request = {

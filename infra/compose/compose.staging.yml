@@ -1,6 +1,67 @@
 name: balance-staging
 
 services:
+  postgres:
+    image: postgres:18.3
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-balance}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-balance}
+      POSTGRES_DB: ${POSTGRES_DB:-balance}
+    volumes:
+      # Postgres 18+ stores data under a version-specific PGDATA beneath /var/lib/postgresql.
+      # Mount at /var/lib/postgresql so major upgrades can use pg_upgrade --link.
+      - postgres-data:/var/lib/postgresql
+    expose:
+      - '5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.4.2
+    command: ['redis-server', '--save', '']
+    expose:
+      - '6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: services/worker/Dockerfile
+    environment:
+      APP_ENV: staging
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      QUEUE_PROOF_NAME: ${QUEUE_PROOF_NAME:-queue_proof}
+      EXTRACTION_QUEUE_NAME: ${EXTRACTION_QUEUE_NAME:-document_extract}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://balance:balance@postgres:5432/balance?schema=public}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
+      S3_BUCKET: ${S3_BUCKET:?S3_BUCKET is required}
+      S3_REGION: ${S3_REGION:-${AWS_REGION:?AWS_REGION is required}}
+      OCR_PROVIDER: ${OCR_PROVIDER:-tesseract}
+      TESSERACT_LANG: ${TESSERACT_LANG:-eng}
+      AWS_REGION: ${AWS_REGION:?AWS_REGION is required}
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    expose:
+      - '8000'
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8000/health']
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
   api:
     build:
       context: ../..
@@ -16,8 +77,23 @@ services:
       GIT_COMMIT: ${GIT_COMMIT:-staging}
       BUILD_ID: ${BUILD_ID:-staging-build}
       API_PORT: 3001
+      DATABASE_URL: ${DATABASE_URL:-postgresql://balance:balance@postgres:5432/balance?schema=public}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      EXTRACTION_QUEUE_NAME: ${EXTRACTION_QUEUE_NAME:-document_extract}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
+      S3_BUCKET: ${S3_BUCKET:?S3_BUCKET is required}
+      S3_REGION: ${S3_REGION:-${AWS_REGION:?AWS_REGION is required}}
+      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
+      PASSWORD_PEPPER: ${PASSWORD_PEPPER:-}
+      AWS_REGION: ${AWS_REGION:?AWS_REGION is required}
     expose:
       - '3001'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   web:
@@ -114,3 +190,4 @@ services:
 volumes:
   prometheus-data:
   grafana-data:
+  postgres-data:

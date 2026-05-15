@@ -3,8 +3,12 @@
 !apps/**
 !packages
 !packages/**
+!services
+!services/**
 !.npmrc
+!eslint.config.mjs
 !package.json
+!prisma.config.ts
 !pnpm-lock.yaml
 !pnpm-workspace.yaml
 !tsconfig.base.json

@@ -16,6 +16,16 @@ function normalizePath(value: string | undefined, fallback: string): string {
   return withLeadingSlash.replace(/\/+$/, '');
 }
 
+function normalizeUrl(value: string | undefined, fallback: string): string {
+  return (value?.trim() || fallback).replace(/\/+$/, '');
+}
+
+function parseStorageDriver(value: string | undefined): 'filesystem' | 's3' {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === 's3') return 's3';
+  return 'filesystem';
+}
+
 export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const apiPort = parsePort(env.API_PORT, 3001);
   const webPort = parsePort(env.WEB_PORT, 3000);
@@ -47,9 +57,21 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     apiPort,
     apiBaseUrl,
     apiProxyTarget,
-    desktopApiBaseUrl: buildApiBaseUrl(env.DESKTOP_API_BASE_URL, apiPort),
+    desktopApiBaseUrl: normalizeUrl(env.DESKTOP_API_BASE_URL, `http://localhost:${webPort}${apiBasePath}`),
     apiBasePath,
     apiHealthPath,
-    apiVersionPath
+    apiVersionPath,
+
+    databaseUrl: firstNonEmpty(env.DATABASE_URL) || 'postgresql://balance:balance@postgres:5432/balance?schema=public',
+    redisUrl: firstNonEmpty(env.REDIS_URL) || 'redis://redis:6379',
+
+    storageDriver: parseStorageDriver(env.STORAGE_DRIVER),
+    storageFilesystemRoot: firstNonEmpty(env.STORAGE_FILESYSTEM_ROOT) || '/data/balance-storage',
+    s3Bucket: firstNonEmpty(env.S3_BUCKET) || '',
+    s3Region: firstNonEmpty(env.S3_REGION) || '',
+
+    jwtSecret: firstNonEmpty(env.JWT_SECRET) || '',
+    jwtExpiresIn: firstNonEmpty(env.JWT_EXPIRES_IN) || '1h',
+    passwordPepper: firstNonEmpty(env.PASSWORD_PEPPER) || ''
   };
 }

@@ -18,6 +18,11 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       GRAFANA_ADMIN_PASSWORD: ci-placeholder-only
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci?schema=public
+      JWT_SECRET: ci-placeholder-only
+      PASSWORD_PEPPER: ci-placeholder-only
+      S3_BUCKET: ci-placeholder-only
+      AWS_REGION: ap-southeast-5
 
     steps:
       - name: Check out repository
@@ -45,6 +50,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Prisma generate
+        run: pnpm prisma:generate
 
       - name: Lint
         run: pnpm lint

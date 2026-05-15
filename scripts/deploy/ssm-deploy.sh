@@ -21,6 +21,8 @@ require_var APP_ENV
 require_var GIT_COMMIT
 require_var BUILD_ID
 require_var GRAFANA_ADMIN_PASSWORD
+require_var JWT_SECRET
+require_var PASSWORD_PEPPER
 
 current_user="$(id -un)"
 
@@ -97,6 +99,55 @@ export NEXT_PUBLIC_API_HEALTH_PATH="${NEXT_PUBLIC_API_HEALTH_PATH:-$API_HEALTH_P
 export NEXT_PUBLIC_API_VERSION_PATH="${NEXT_PUBLIC_API_VERSION_PATH:-$API_VERSION_PATH}"
 export GRAFANA_ADMIN_PASSWORD
 
+# Backend runtime variables (propagated from GitHub Actions / EC2 environment).
+# Defaults are only used when safe for the target environment.
+export DATABASE_URL="${DATABASE_URL:-postgresql://balance:balance@postgres:5432/balance?schema=public}"
+export REDIS_URL="${REDIS_URL:-redis://redis:6379}"
+export EXTRACTION_QUEUE_NAME="${EXTRACTION_QUEUE_NAME:-document_extract}"
+export QUEUE_PROOF_NAME="${QUEUE_PROOF_NAME:-queue_proof}"
+
+default_storage_driver='filesystem'
+case "$APP_ENV" in
+  local)
+    default_storage_driver='filesystem'
+    ;;
+  staging|production)
+    default_storage_driver='s3'
+    ;;
+  *)
+    printf 'Unsupported APP_ENV for deployment: %s\n' "$APP_ENV" >&2
+    exit 1
+    ;;
+esac
+
+export STORAGE_DRIVER="${STORAGE_DRIVER:-$default_storage_driver}"
+export STORAGE_FILESYSTEM_ROOT="${STORAGE_FILESYSTEM_ROOT:-/data/balance-storage}"
+export S3_BUCKET="${S3_BUCKET:-}"
+export S3_REGION="${S3_REGION:-}"
+export AWS_REGION="${AWS_REGION:-${S3_REGION:-}}"
+
+export JWT_SECRET
+export JWT_EXPIRES_IN="${JWT_EXPIRES_IN:-1h}"
+export PASSWORD_PEPPER
+
+export OCR_PROVIDER="${OCR_PROVIDER:-tesseract}"
+export TESSERACT_LANG="${TESSERACT_LANG:-eng}"
+
 docker compose -f "$COMPOSE_FILE" down --remove-orphans
 docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
+
+if [ "$APP_ENV" = 'staging' ] || [ "$APP_ENV" = 'production' ]; then
+  printf 'Applying Prisma migrations (prisma migrate deploy)...\n'
+  attempts=0
+  until docker compose -f "$COMPOSE_FILE" exec -T api pnpm prisma:deploy; do
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 10 ]; then
+      printf 'Prisma migrate deploy failed after %s attempts\n' "$attempts" >&2
+      exit 1
+    fi
+    printf 'Prisma migrate deploy failed; retrying (%s/10)...\n' "$attempts" >&2
+    sleep 3
+  done
+fi
+
 docker compose -f "$COMPOSE_FILE" ps
