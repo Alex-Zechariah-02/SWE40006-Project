@@ -1,10 +1,19 @@
 import os
 
 
+def _runtime_env() -> str:
+    return (os.getenv("APP_ENV") or os.getenv("NODE_ENV") or "local").strip().lower()
+
+
+APP_ENV = _runtime_env()
+
+
 def env(name: str, fallback: str | None = None) -> str:
     value = os.getenv(name)
     if value is not None and value.strip() != "":
         return value.strip()
+    if APP_ENV in {"staging", "production"} and name in {"DATABASE_URL"}:
+        raise RuntimeError(f"{name} is required in {APP_ENV}")
     if fallback is not None:
         return fallback
     raise RuntimeError(f"{name} is required")

@@ -1,5 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import type { DocumentField, DocumentStatus, ExtractionProvider, ExtractionJobStatus, FieldName, FieldSource, Prisma } from '@balance/db';
+import type {
+  DocumentField,
+  DocumentStatus,
+  ExtractionProvider,
+  ExtractionJobStatus,
+  FieldName,
+  FieldSource,
+  Prisma,
+  ReviewStatus
+} from '@balance/db';
 
 import { throwContractHttpError, throwValidationError } from '../common/contract-errors';
 import { PrismaService } from '../prisma/prisma.service';
@@ -46,6 +55,12 @@ function mapField(field: DocumentField): PublicField {
   };
 }
 
+function assertReviewerCanSeeReview(review: { status: ReviewStatus; reviewerId: string | null }, reviewerId: string) {
+  if (review.status === 'pending' && !review.reviewerId) return;
+  if (review.reviewerId === reviewerId) return;
+  throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
+}
+
 @Injectable()
 export class DocumentsService {
   constructor(
@@ -61,6 +76,8 @@ export class DocumentsService {
     contentType: string;
     sizeBytes: number;
     body: Buffer;
+    label: string | null;
+    notes: string | null;
   }) {
     if (!ACCEPTED_CONTENT_TYPES.has(input.contentType)) {
       throwContractHttpError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Unsupported media type', []);
@@ -73,7 +90,9 @@ export class DocumentsService {
         contentType: input.contentType,
         sizeBytes: input.sizeBytes,
         storageKey: '',
-        status: 'uploaded'
+        status: 'uploaded',
+        label: input.label,
+        notes: input.notes
       }
     });
 
@@ -136,6 +155,8 @@ export class DocumentsService {
         contentType: updated.contentType,
         sizeBytes: updated.sizeBytes,
         status: updated.status,
+        label: updated.label,
+        notes: updated.notes,
         merchantName: updated.merchantName,
         documentDate: updated.documentDate,
         amountMinor: updated.amountMinor,
@@ -178,6 +199,8 @@ export class DocumentsService {
         contentType: d.contentType,
         sizeBytes: d.sizeBytes,
         status: d.status,
+        label: d.label,
+        notes: d.notes,
         merchantName: d.merchantName,
         documentDate: d.documentDate,
         amountMinor: d.amountMinor,
@@ -216,6 +239,7 @@ export class DocumentsService {
       if (!document.review) {
         throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
       }
+      assertReviewerCanSeeReview(document.review, input.userId);
     } else if (!isAdmin) {
       throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
     }
@@ -230,6 +254,8 @@ export class DocumentsService {
         contentType: document.contentType,
         sizeBytes: document.sizeBytes,
         status: document.status,
+        label: document.label,
+        notes: document.notes,
         merchantName: document.merchantName,
         documentDate: document.documentDate,
         amountMinor: document.amountMinor,
@@ -286,7 +312,7 @@ export class DocumentsService {
       throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
     }
 
-    if (document.status === 'submitted' || document.status === 'reviewed' || document.status === 'rejected') {
+    if (document.status !== 'extracted' && document.status !== 'correction_required') {
       throwContractHttpError(409, 'CONFLICT', 'Conflict', []);
     }
 

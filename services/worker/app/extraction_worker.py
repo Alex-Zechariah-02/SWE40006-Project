@@ -75,19 +75,19 @@ async def process_extraction(job, _job_token):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                'UPDATE "ExtractionJob" SET status=%s, "startedAt"=%s WHERE id=%s',
+                'UPDATE "ExtractionJob" SET status=%s::"ExtractionJobStatus", "startedAt"=%s WHERE id=%s',
                 ("processing", _now(), extraction_job_id),
             )
             cur.execute(
-                'UPDATE "Document" SET status=%s, "updatedAt"=%s WHERE id=%s',
+                'UPDATE "Document" SET status=%s::"DocumentStatus", "updatedAt"=%s WHERE id=%s',
                 ("processing", _now(), document_id),
             )
             cur.execute(
                 'INSERT INTO "AuditEvent" (id, action, "entityType", "entityId", "actorId", "actorRole", message, metadata, "createdAt", "documentId", "extractionJobId") '
-                "VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s)",
+                'VALUES (%s::uuid, %s, %s::"EntityType", %s, %s, %s, %s, %s::jsonb, %s, %s, %s)',
                 (
                     _uuid(),
-                    "document.processing_started",
+                    "extraction.started",
                     "document",
                     document_id,
                     None,
@@ -132,7 +132,7 @@ async def process_extraction(job, _job_token):
                 )
 
             cur.execute(
-                'UPDATE "Document" SET status=%s, "merchantName"=%s, "documentDate"=%s, "amountMinor"=%s, currency=%s, "updatedAt"=%s WHERE id=%s',
+                'UPDATE "Document" SET status=%s::"DocumentStatus", "merchantName"=%s, "documentDate"=%s, "amountMinor"=%s, currency=%s, "updatedAt"=%s WHERE id=%s',
                 (
                     status,
                     fields.get("merchantName"),
@@ -145,13 +145,13 @@ async def process_extraction(job, _job_token):
             )
 
             cur.execute(
-                'UPDATE "ExtractionJob" SET status=%s, "completedAt"=%s, "errorMessage"=NULL WHERE id=%s',
+                'UPDATE "ExtractionJob" SET status=%s::"ExtractionJobStatus", "completedAt"=%s, "errorMessage"=NULL WHERE id=%s',
                 ("completed", _now(), extraction_job_id),
             )
 
             cur.execute(
                 'INSERT INTO "AuditEvent" (id, action, "entityType", "entityId", "actorId", "actorRole", message, metadata, "createdAt", "documentId", "extractionJobId") '
-                "VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s)",
+                'VALUES (%s::uuid, %s, %s::"EntityType", %s, %s, %s, %s, %s::jsonb, %s, %s, %s)',
                 (
                     _uuid(),
                     "extraction.completed",
@@ -173,19 +173,19 @@ async def process_extraction(job, _job_token):
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    'UPDATE "ExtractionJob" SET status=%s, "completedAt"=%s, "errorMessage"=%s WHERE id=%s',
+                    'UPDATE "ExtractionJob" SET status=%s::"ExtractionJobStatus", "completedAt"=%s, "errorMessage"=%s WHERE id=%s',
                     ("failed", _now(), str(e)[:500], extraction_job_id),
                 )
                 cur.execute(
-                    'UPDATE "Document" SET status=%s, "updatedAt"=%s WHERE id=%s',
+                    'UPDATE "Document" SET status=%s::"DocumentStatus", "updatedAt"=%s WHERE id=%s',
                     ("failed", _now(), document_id),
                 )
                 cur.execute(
                     'INSERT INTO "AuditEvent" (id, action, "entityType", "entityId", "actorId", "actorRole", message, metadata, "createdAt", "documentId", "extractionJobId") '
-                    "VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s)",
+                    'VALUES (%s::uuid, %s, %s::"EntityType", %s, %s, %s, %s, %s::jsonb, %s, %s, %s)',
                     (
                         _uuid(),
-                        "document.extraction_failed",
+                        "extraction.failed",
                         "document",
                         document_id,
                         None,

@@ -20,6 +20,22 @@ function fieldLabel(name: string): string {
   }
 }
 
+type ReviewActor = { actorId: string; actorRole: string };
+type ReviewVisibilityRecord = { status: ReviewStatus; reviewerId: string | null };
+
+function assertReviewVisibleToActor(review: ReviewVisibilityRecord, actor: ReviewActor) {
+  if (actor.actorRole === 'admin') return;
+
+  if (actor.actorRole !== 'reviewer') {
+    throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
+  }
+
+  if (review.status === 'pending' && !review.reviewerId) return;
+  if (review.reviewerId === actor.actorId) return;
+
+  throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
+}
+
 @Injectable()
 export class ReviewsService {
   constructor(
@@ -27,12 +43,23 @@ export class ReviewsService {
     private readonly audit: AuditService
   ) {}
 
-  async listQueue(input: { limit: number; offset: number; status?: ReviewStatus }) {
-    const where: Prisma.ReviewWhereInput = {};
-    if (input.status) {
-      where.status = input.status;
+  async listQueue(input: { limit: number; offset: number; status?: ReviewStatus } & ReviewActor) {
+    let where: Prisma.ReviewWhereInput = {};
+
+    if (input.actorRole === 'admin') {
+      where = input.status ? { status: input.status } : { status: { in: ['pending', 'in_review'] } };
+    } else if (input.actorRole === 'reviewer') {
+      if (input.status === 'pending') {
+        where = { status: 'pending' };
+      } else if (input.status) {
+        where = { status: input.status, reviewerId: input.actorId };
+      } else {
+        where = {
+          OR: [{ status: 'pending' }, { status: 'in_review', reviewerId: input.actorId }]
+        };
+      }
     } else {
-      where.status = { in: ['pending', 'in_review'] };
+      throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
     }
 
     const [reviews, total] = await Promise.all([
@@ -79,7 +106,7 @@ export class ReviewsService {
     };
   }
 
-  async getById(input: { id: string }) {
+  async getById(input: { id: string } & ReviewActor) {
     const review = await this.prisma.review.findUnique({
       where: { id: input.id },
       include: {
@@ -89,34 +116,7 @@ export class ReviewsService {
     });
 
     if (!review) throwContractHttpError(404, 'NOT_FOUND', 'Not found', []);
-
-    // Optional "mark as started" transition.
-    if (review.status === 'pending') {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.review.update({
-          where: { id: review.id },
-          data: { status: 'in_review' }
-        });
-        await tx.claim.update({
-          where: { id: review.claimId },
-          data: { status: 'under_review' satisfies ClaimStatus }
-        });
-      });
-
-      await this.audit.writeEvent({
-        action: 'review.started',
-        entityType: 'review',
-        entityId: review.id,
-        actor: { actorId: null, actorRole: 'system' },
-        message: 'Review started',
-        metadata: {},
-        reviewId: review.id,
-        claimId: review.claimId,
-        documentId: review.documentId
-      });
-
-      review.status = 'in_review';
-    }
+    assertReviewVisibleToActor(review, input);
 
     const auditEvents = await this.prisma.auditEvent.findMany({
       where: {
@@ -173,14 +173,74 @@ export class ReviewsService {
     };
   }
 
+  async claim(input: { reviewId: string; actorId: string; actorRole: string }) {
+    const review = await this.prisma.review.findUnique({
+      where: { id: input.reviewId },
+      include: { claim: true }
+    });
+    if (!review) throwContractHttpError(404, 'NOT_FOUND', 'Not found', []);
+
+    if (review.status !== 'pending' || review.claim.status !== 'submitted') {
+      throwContractHttpError(409, 'CONFLICT', 'Conflict', []);
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updatedReview = await tx.review.update({
+        where: { id: review.id },
+        data: {
+          status: 'in_review',
+          reviewerId: input.actorId
+        }
+      });
+
+      const updatedClaim = await tx.claim.update({
+        where: { id: review.claimId },
+        data: {
+          status: 'under_review' satisfies ClaimStatus
+        }
+      });
+
+      return { updatedReview, updatedClaim };
+    });
+
+    await this.audit.writeEvent({
+      action: 'review.started',
+      entityType: 'review',
+      entityId: review.id,
+      actor: { actorId: input.actorId, actorRole: input.actorRole },
+      message: 'Review started',
+      metadata: {},
+      reviewId: review.id,
+      claimId: review.claimId,
+      documentId: review.documentId
+    });
+
+    return {
+      review: {
+        id: result.updatedReview.id,
+        claimId: result.updatedReview.claimId,
+        documentId: result.updatedReview.documentId,
+        status: result.updatedReview.status,
+        reviewerId: result.updatedReview.reviewerId,
+        updatedAt: result.updatedReview.updatedAt.toISOString()
+      },
+      claim: {
+        id: result.updatedClaim.id,
+        status: result.updatedClaim.status,
+        updatedAt: result.updatedClaim.updatedAt.toISOString()
+      }
+    };
+  }
+
   async approve(input: { reviewId: string; actorId: string; actorRole: string; note?: string | null }) {
     const review = await this.prisma.review.findUnique({
       where: { id: input.reviewId },
       include: { claim: true, document: true }
     });
     if (!review) throwContractHttpError(404, 'NOT_FOUND', 'Not found', []);
+    assertReviewVisibleToActor(review, input);
 
-    if (review.status !== 'pending' && review.status !== 'in_review') {
+    if (review.status !== 'in_review') {
       throwContractHttpError(409, 'CONFLICT', 'Conflict', []);
     }
 
@@ -191,7 +251,6 @@ export class ReviewsService {
         where: { id: review.id },
         data: {
           status: 'approved',
-          reviewerId: input.actorId,
           decisionNote: input.note ?? null,
           decidedAt
         }
@@ -258,8 +317,9 @@ export class ReviewsService {
       include: { claim: true, document: true }
     });
     if (!review) throwContractHttpError(404, 'NOT_FOUND', 'Not found', []);
+    assertReviewVisibleToActor(review, input);
 
-    if (review.status !== 'pending' && review.status !== 'in_review') {
+    if (review.status !== 'in_review') {
       throwContractHttpError(409, 'CONFLICT', 'Conflict', []);
     }
 
@@ -270,7 +330,6 @@ export class ReviewsService {
         where: { id: review.id },
         data: {
           status: 'rejected',
-          reviewerId: input.actorId,
           decisionNote: input.note,
           decidedAt
         }

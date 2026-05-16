@@ -12,25 +12,31 @@ async function main() {
   const queueName = requiredEnv('QUEUE_PROOF_NAME', 'queue_proof');
 
   const connection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
+  const eventsConnection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
   const queue = new Queue(queueName, { connection });
-  const queueEvents = new QueueEvents(queueName, { connection });
+  const queueEvents = new QueueEvents(queueName, { connection: eventsConnection });
 
-  const job = await queue.add(
-    'proof',
-    { createdAt: new Date().toISOString(), source: 'node-producer' },
-    // Keep the job record so `waitUntilFinished(...)` can reliably read the final state
-    // even when a non-Node worker completes it.
-    { removeOnComplete: false, removeOnFail: false }
-  );
+  try {
+    await queueEvents.waitUntilReady();
 
-  // waitUntilFinished resolves with the processor return value when the worker completes the job.
-  const result = await job.waitUntilFinished(queueEvents, 30_000);
+    const job = await queue.add(
+      'proof',
+      { createdAt: new Date().toISOString(), source: 'node-producer' },
+      // Keep the job record so `waitUntilFinished(...)` can reliably read the final state
+      // even when a non-Node worker completes it.
+      { removeOnComplete: false, removeOnFail: false }
+    );
 
-  console.log(JSON.stringify({ queueName, jobId: job.id, result }, null, 2));
+    // waitUntilFinished resolves with the processor return value when the worker completes the job.
+    const result = await job.waitUntilFinished(queueEvents, 30_000);
 
-  await queueEvents.close();
-  await queue.close();
-  await connection.quit();
+    console.log(JSON.stringify({ queueName, jobId: job.id, result }, null, 2));
+  } finally {
+    await queueEvents.close();
+    await queue.close();
+    await eventsConnection.quit();
+    await connection.quit();
+  }
 }
 
 void main().catch((err) => {

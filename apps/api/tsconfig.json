@@ -7,6 +7,7 @@
       "@balance/types": ["packages/types/src/index.ts"],
       "@balance/utils": ["packages/utils/src/index.ts"],
       "@balance/config": ["packages/config/src/index.ts"],
+      "@balance/schemas": ["packages/schemas/src/index.ts"],
       "@balance/db": ["packages/db/src/index.ts"]
     },
     "experimentalDecorators": true,

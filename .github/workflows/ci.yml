@@ -16,13 +16,50 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18.3
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:8.4.2
+        ports:
+          - 127.0.0.1:6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     env:
+      APP_ENV: local
       GRAFANA_ADMIN_PASSWORD: ci-placeholder-only
       DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci?schema=public
+      POSTGRES_PASSWORD: ci-placeholder-only
+      REDIS_URL: redis://127.0.0.1:6379
       JWT_SECRET: ci-placeholder-only
+      JWT_EXPIRES_IN: 1h
       PASSWORD_PEPPER: ci-placeholder-only
+      STORAGE_DRIVER: filesystem
+      STORAGE_FILESYSTEM_ROOT: /tmp/balance-ci-storage
       S3_BUCKET: ci-placeholder-only
+      S3_REGION: ap-southeast-5
       AWS_REGION: ap-southeast-5
+      QUEUE_PROOF_NAME: queue_proof
+      EXTRACTION_QUEUE_NAME: document_extract
+      OCR_PROVIDER: tesseract
+      TESSERACT_LANG: eng
+      SEED_CONSUMER_PASSWORD: ci-consumer-password
+      SEED_REVIEWER_PASSWORD: ci-reviewer-password
+      SEED_ADMIN_PASSWORD: ci-admin-password
 
     steps:
       - name: Check out repository
@@ -54,6 +91,12 @@ jobs:
       - name: Prisma generate
         run: pnpm prisma:generate
 
+      - name: Prisma migrate deploy
+        run: pnpm prisma:deploy
+
+      - name: Prisma seed
+        run: pnpm prisma:seed
+
       - name: Lint
         run: pnpm lint
 
@@ -62,6 +105,12 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: Build worker Docker image
+        run: docker build -f services/worker/Dockerfile -t balance-worker:validation .
+
+      - name: Compile worker Python sources
+        run: docker run --rm balance-worker:validation python -m compileall app
 
       - name: Build
         run: pnpm build
@@ -74,3 +123,9 @@ jobs:
 
       - name: Validate production Compose file
         run: docker compose -f infra/compose/compose.production.yml config
+
+      - name: Validate queue proof
+        run: bash scripts/verify/queue-proof.sh
+
+      - name: Validate worker extraction proof
+        run: bash scripts/verify/worker-extraction-proof.sh

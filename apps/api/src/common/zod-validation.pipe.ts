@@ -1,13 +1,16 @@
 import { PipeTransform } from '@nestjs/common';
-import type { ZodTypeAny } from 'zod';
 import { ZodError } from 'zod';
 
 import { throwValidationError } from './contract-errors';
 
-export class ZodValidationPipe implements PipeTransform {
-  constructor(private readonly schema: ZodTypeAny) {}
+type ParseableSchema<T> = {
+  parse(value: unknown): T;
+};
 
-  transform(value: unknown) {
+export class ZodValidationPipe<T = unknown> implements PipeTransform<unknown, T> {
+  constructor(private readonly schema: ParseableSchema<T>) {}
+
+  transform(value: unknown): T {
     try {
       return this.schema.parse(value);
     } catch (err) {
@@ -22,4 +25,3 @@ export class ZodValidationPipe implements PipeTransform {
     }
   }
 }
-

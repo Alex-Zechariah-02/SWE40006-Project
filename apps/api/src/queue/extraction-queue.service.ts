@@ -47,9 +47,12 @@ export class ExtractionQueueService implements OnModuleDestroy {
     }
   }
 
+  async checkReady(): Promise<void> {
+    await this.connection.ping();
+  }
+
   async onModuleDestroy() {
     await this.queue.close();
     await this.connection.quit();
   }
 }
-

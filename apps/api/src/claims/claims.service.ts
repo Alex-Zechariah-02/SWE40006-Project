@@ -5,6 +5,12 @@ import { AuditService } from '../audit/audit.service';
 import { throwContractHttpError } from '../common/contract-errors';
 import { PrismaService } from '../prisma/prisma.service';
 
+function assertReviewerCanSeeReview(review: { status: ReviewStatus; reviewerId: string | null }, reviewerId: string) {
+  if (review.status === 'pending' && !review.reviewerId) return;
+  if (review.reviewerId === reviewerId) return;
+  throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
+}
+
 @Injectable()
 export class ClaimsService {
   constructor(
@@ -165,6 +171,7 @@ export class ClaimsService {
           select: {
             id: true,
             status: true,
+            reviewerId: true,
             decisionNote: true
           }
         }
@@ -179,6 +186,7 @@ export class ClaimsService {
       }
     } else if (input.role === 'reviewer') {
       if (!claim.review) throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
+      assertReviewerCanSeeReview(claim.review, input.userId);
     } else if (input.role !== 'admin') {
       throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
     }
@@ -205,6 +213,7 @@ export class ClaimsService {
           ? {
               id: claim.review.id,
               status: claim.review.status,
+              reviewerId: claim.review.reviewerId,
               decisionNote: claim.review.decisionNote
             }
           : null

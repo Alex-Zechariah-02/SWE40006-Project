@@ -3,10 +3,12 @@ import signal
 
 from fastapi import FastAPI
 from bullmq import Worker
+from redis.asyncio import Redis
 
 from .queue_proof import process_queue_proof
 from .extraction_worker import process_extraction
 from . import settings
+from . import db
 
 
 app = FastAPI(title="Balance Worker", version="0.1.0")
@@ -22,7 +24,15 @@ async def health():
 
 @app.get("/ready")
 async def ready():
-    # For now, readiness is "worker process is alive".
+    redis = Redis.from_url(settings.REDIS_URL)
+    try:
+        await redis.ping()
+        with db.connect(settings.DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+    finally:
+        await redis.aclose()
+
     return {"status": "ready", "service": "balance-worker"}
 
 
@@ -43,4 +53,3 @@ async def on_startup():
             await w.close()
 
     asyncio.create_task(_waiter())
-

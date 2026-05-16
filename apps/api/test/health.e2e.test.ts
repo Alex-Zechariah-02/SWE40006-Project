@@ -3,17 +3,27 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { AppModule } from '../src/app.module';
+import { AppController } from '../src/app.controller';
+import { ContractHttpExceptionFilter } from '../src/common/contract-http-exception.filter';
+import { PrismaService } from '../src/prisma/prisma.service';
+import { ExtractionQueueService } from '../src/queue/extraction-queue.service';
 
 describe('Balance API status endpoints', () => {
   let app: INestApplication;
+  const prisma = { checkReady: async () => undefined };
+  const queue = { checkReady: async () => undefined };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [AppModule]
+      controllers: [AppController],
+      providers: [
+        { provide: PrismaService, useValue: prisma },
+        { provide: ExtractionQueueService, useValue: queue }
+      ]
     }).compile();
 
     app = moduleRef.createNestApplication();
+    app.useGlobalFilters(new ContractHttpExceptionFilter());
     await app.init();
   });
 
@@ -45,6 +55,25 @@ describe('Balance API status endpoints', () => {
       environment: 'local',
       version: '0.1.0'
     });
+  });
+
+  it('returns 503 from /ready when a dependency check fails', async () => {
+    const original = queue.checkReady;
+    queue.checkReady = async () => {
+      throw new Error('redis unavailable');
+    };
+
+    const response = await request(app.getHttpServer()).get('/ready').expect(503);
+
+    expect(response.body).toMatchObject({
+      error: {
+        code: 'SERVICE_UNAVAILABLE',
+        message: 'Service unavailable',
+        details: []
+      }
+    });
+
+    queue.checkReady = original;
   });
 
   it('serves /version', async () => {

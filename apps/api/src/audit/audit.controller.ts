@@ -1,5 +1,6 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { z } from 'zod';
+import type { Prisma, ReviewStatus } from '@balance/db';
+import { auditQuerySchema, type AuditQuery } from '@balance/schemas';
 
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -9,15 +10,13 @@ import { throwContractHttpError, throwValidationError } from '../common/contract
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { PrismaService } from '../prisma/prisma.service';
 
-const auditQuerySchema = z.object({
-  documentId: z.string().uuid().optional(),
-  claimId: z.string().uuid().optional(),
-  reviewId: z.string().uuid().optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
-  offset: z.coerce.number().int().min(0).optional()
-});
-
 type RequestUser = { id: string; role: string };
+
+function assertReviewerCanSeeReview(review: { status: ReviewStatus; reviewerId: string | null }, reviewerId: string) {
+  if (review.status === 'pending' && !review.reviewerId) return;
+  if (review.reviewerId === reviewerId) return;
+  throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
+}
 
 @Controller('audit')
 export class AuditController {
@@ -27,7 +26,7 @@ export class AuditController {
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('consumer', 'reviewer', 'admin')
   async list(
-    @Query(new ZodValidationPipe(auditQuerySchema)) query: z.infer<typeof auditQuerySchema>,
+    @Query(new ZodValidationPipe(auditQuerySchema)) query: AuditQuery,
     @CurrentUser() user: RequestUser
   ) {
     const limit = query.limit ?? 50;
@@ -42,7 +41,7 @@ export class AuditController {
     if (query.documentId) {
       const doc = await this.prisma.document.findUnique({
         where: { id: query.documentId },
-        select: { id: true, ownerId: true, review: { select: { id: true } } }
+        select: { id: true, ownerId: true, review: { select: { id: true, status: true, reviewerId: true } } }
       });
       if (!doc) throwContractHttpError(404, 'NOT_FOUND', 'Not found', []);
 
@@ -52,12 +51,15 @@ export class AuditController {
       if (user.role === 'reviewer' && !doc.review) {
         throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
       }
+      if (user.role === 'reviewer' && doc.review) {
+        assertReviewerCanSeeReview(doc.review, user.id);
+      }
     }
 
     if (query.claimId) {
       const claim = await this.prisma.claim.findUnique({
         where: { id: query.claimId },
-        select: { id: true, consumerId: true, review: { select: { id: true } } }
+        select: { id: true, consumerId: true, review: { select: { id: true, status: true, reviewerId: true } } }
       });
       if (!claim) throwContractHttpError(404, 'NOT_FOUND', 'Not found', []);
 
@@ -67,27 +69,33 @@ export class AuditController {
       if (user.role === 'reviewer' && !claim.review) {
         throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
       }
+      if (user.role === 'reviewer' && claim.review) {
+        assertReviewerCanSeeReview(claim.review, user.id);
+      }
     }
 
     if (query.reviewId) {
       const review = await this.prisma.review.findUnique({
         where: { id: query.reviewId },
-        select: { id: true, claim: { select: { consumerId: true } } }
+        select: { id: true, status: true, reviewerId: true, claim: { select: { consumerId: true } } }
       });
       if (!review) throwContractHttpError(404, 'NOT_FOUND', 'Not found', []);
 
       if (user.role === 'consumer' && review.claim.consumerId !== user.id) {
         throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
       }
+      if (user.role === 'reviewer') {
+        assertReviewerCanSeeReview(review, user.id);
+      }
     }
 
-    const where = {
-      OR: [
-        ...(query.documentId ? [{ documentId: query.documentId }] : []),
-        ...(query.claimId ? [{ claimId: query.claimId }] : []),
-        ...(query.reviewId ? [{ reviewId: query.reviewId }] : [])
-      ]
-    };
+    const filters: Prisma.AuditEventWhereInput[] = [
+      ...(query.documentId ? [{ documentId: query.documentId }] : []),
+      ...(query.claimId ? [{ claimId: query.claimId }] : []),
+      ...(query.reviewId ? [{ reviewId: query.reviewId }] : [])
+    ];
+
+    const where: Prisma.AuditEventWhereInput = filters.length > 0 ? { OR: filters } : {};
 
     const [items, total] = await Promise.all([
       this.prisma.auditEvent.findMany({

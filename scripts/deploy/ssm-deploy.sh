@@ -9,6 +9,28 @@ require_var() {
   fi
 }
 
+require_one_of() {
+  local first="$1"
+  local second="$2"
+  if [ -z "${!first:-}" ] && [ -z "${!second:-}" ]; then
+    printf '%s or %s is required\n' "$first" "$second" >&2
+    exit 1
+  fi
+}
+
+reject_placeholder() {
+  local name="$1"
+  local value="${!name:-}"
+  local normalized
+  normalized="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+  case "$normalized" in
+    ''|'replace-this-local-only'|'change-me'|'change-me-local-only'|'change-me-for-local-only'|'balance'|'password')
+      printf '%s must be a non-placeholder value\n' "$name" >&2
+      exit 1
+      ;;
+  esac
+}
+
 APP_DIR="${APP_DIR:-/opt/swe40006-project}"
 COMPOSE_FILE="${COMPOSE_FILE:-}"
 APP_ENV="${APP_ENV:-}"
@@ -23,6 +45,31 @@ require_var BUILD_ID
 require_var GRAFANA_ADMIN_PASSWORD
 require_var JWT_SECRET
 require_var PASSWORD_PEPPER
+
+if [ "$APP_ENV" = 'staging' ] || [ "$APP_ENV" = 'production' ]; then
+  require_var DATABASE_URL
+  require_var POSTGRES_PASSWORD
+  require_var SEED_CONSUMER_PASSWORD
+  require_var SEED_REVIEWER_PASSWORD
+  require_var SEED_ADMIN_PASSWORD
+  require_var S3_BUCKET
+  require_one_of AWS_REGION S3_REGION
+
+  case "$DATABASE_URL" in
+    *'balance:balance@'*)
+      printf 'DATABASE_URL must not use the local balance:balance placeholder in %s\n' "$APP_ENV" >&2
+      exit 1
+      ;;
+  esac
+
+  reject_placeholder POSTGRES_PASSWORD
+  reject_placeholder JWT_SECRET
+  reject_placeholder PASSWORD_PEPPER
+  reject_placeholder GRAFANA_ADMIN_PASSWORD
+  reject_placeholder SEED_CONSUMER_PASSWORD
+  reject_placeholder SEED_REVIEWER_PASSWORD
+  reject_placeholder SEED_ADMIN_PASSWORD
+fi
 
 current_user="$(id -un)"
 
@@ -100,8 +147,14 @@ export NEXT_PUBLIC_API_VERSION_PATH="${NEXT_PUBLIC_API_VERSION_PATH:-$API_VERSIO
 export GRAFANA_ADMIN_PASSWORD
 
 # Backend runtime variables (propagated from GitHub Actions / EC2 environment).
-# Defaults are only used when safe for the target environment.
-export DATABASE_URL="${DATABASE_URL:-postgresql://balance:balance@postgres:5432/balance?schema=public}"
+if [ "$APP_ENV" = 'local' ]; then
+  export DATABASE_URL="${DATABASE_URL:-postgresql://balance:balance@postgres:5432/balance?schema=public}"
+else
+  export DATABASE_URL
+fi
+export POSTGRES_USER="${POSTGRES_USER:-balance}"
+export POSTGRES_PASSWORD
+export POSTGRES_DB="${POSTGRES_DB:-balance}"
 export REDIS_URL="${REDIS_URL:-redis://redis:6379}"
 export EXTRACTION_QUEUE_NAME="${EXTRACTION_QUEUE_NAME:-document_extract}"
 export QUEUE_PROOF_NAME="${QUEUE_PROOF_NAME:-queue_proof}"
@@ -129,6 +182,9 @@ export AWS_REGION="${AWS_REGION:-${S3_REGION:-}}"
 export JWT_SECRET
 export JWT_EXPIRES_IN="${JWT_EXPIRES_IN:-1h}"
 export PASSWORD_PEPPER
+export SEED_CONSUMER_PASSWORD="${SEED_CONSUMER_PASSWORD:-replace-this-local-only}"
+export SEED_REVIEWER_PASSWORD="${SEED_REVIEWER_PASSWORD:-replace-this-local-only}"
+export SEED_ADMIN_PASSWORD="${SEED_ADMIN_PASSWORD:-replace-this-local-only}"
 
 export OCR_PROVIDER="${OCR_PROVIDER:-tesseract}"
 export TESSERACT_LANG="${TESSERACT_LANG:-eng}"
@@ -146,6 +202,18 @@ if [ "$APP_ENV" = 'staging' ] || [ "$APP_ENV" = 'production' ]; then
       exit 1
     fi
     printf 'Prisma migrate deploy failed; retrying (%s/10)...\n' "$attempts" >&2
+    sleep 3
+  done
+
+  printf 'Applying Prisma seed (idempotent)...\n'
+  attempts=0
+  until docker compose -f "$COMPOSE_FILE" exec -T api pnpm prisma:seed; do
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 10 ]; then
+      printf 'Prisma seed failed after %s attempts\n' "$attempts" >&2
+      exit 1
+    fi
+    printf 'Prisma seed failed; retrying (%s/10)...\n' "$attempts" >&2
     sleep 3
   done
 fi

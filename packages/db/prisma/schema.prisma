@@ -108,6 +108,8 @@ model Document {
   sizeBytes      Int
   storageKey     String
   status         DocumentStatus
+  label          String?
+  notes          String?
 
   merchantName String?
   documentDate String?

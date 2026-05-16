@@ -2,13 +2,24 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@balance/db';
 import { PrismaPg } from '@prisma/adapter-pg';
 
+function isNonLocalRuntime(): boolean {
+  const value = (process.env.APP_ENV || process.env.NODE_ENV || '').trim().toLowerCase();
+  return value === 'staging' || value === 'production';
+}
+
+function resolveDatabaseUrl(): string {
+  const value = process.env.DATABASE_URL?.trim();
+  if (value) return value;
+  if (isNonLocalRuntime()) {
+    throw new Error('DATABASE_URL is required in staging and production');
+  }
+  return 'postgresql://balance:balance@postgres:5432/balance?schema=public';
+}
+
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor() {
-    const connectionString =
-      process.env.DATABASE_URL || 'postgresql://balance:balance@postgres:5432/balance?schema=public';
-
-    const adapter = new PrismaPg({ connectionString });
+    const adapter = new PrismaPg({ connectionString: resolveDatabaseUrl() });
     super({ adapter });
   }
 
@@ -24,5 +35,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   async onModuleDestroy() {
     await this.$disconnect();
+  }
+
+  async checkReady(): Promise<void> {
+    await this.$queryRawUnsafe('SELECT 1');
   }
 }

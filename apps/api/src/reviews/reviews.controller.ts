@@ -1,29 +1,21 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { z } from 'zod';
 import type { ReviewStatus } from '@balance/db';
+import {
+  reviewApprovePayloadSchema,
+  reviewQueueQuerySchema,
+  reviewRejectPayloadSchema,
+  type ReviewApprovePayload,
+  type ReviewQueueQuery,
+  type ReviewRejectPayload
+} from '@balance/schemas';
 
 import { AuthGuard, type AuthenticatedRequestUser } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
-import { throwValidationError } from '../common/contract-errors';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 
 import { ReviewsService } from './reviews.service';
-
-const queueQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).optional(),
-  offset: z.coerce.number().int().min(0).optional(),
-  status: z.string().optional()
-});
-
-const decisionBodySchema = z.object({
-  note: z.string().optional()
-});
-
-const rejectBodySchema = z.object({
-  note: z.string().min(1)
-});
 
 @Controller('reviews')
 export class ReviewsController {
@@ -32,16 +24,20 @@ export class ReviewsController {
   @Get('queue')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('reviewer', 'admin')
-  async queue(@Query(new ZodValidationPipe(queueQuerySchema)) query: z.infer<typeof queueQuerySchema>) {
+  async queue(
+    @Query(new ZodValidationPipe(reviewQueueQuerySchema)) query: ReviewQueueQuery,
+    @CurrentUser() user: AuthenticatedRequestUser
+  ) {
     const limit = query.limit ?? 20;
     const offset = query.offset ?? 0;
     const status = query.status?.trim();
 
-    if (status && !['pending', 'in_review', 'approved', 'rejected'].includes(status)) {
-      throwValidationError([{ path: 'status', message: 'Invalid status' }]);
-    }
-
-    const input: { limit: number; offset: number; status?: ReviewStatus } = { limit, offset };
+    const input: { limit: number; offset: number; status?: ReviewStatus; actorId: string; actorRole: string } = {
+      limit,
+      offset,
+      actorId: user.id,
+      actorRole: user.role
+    };
     if (status) input.status = status as ReviewStatus;
     return this.reviews.listQueue(input);
   }
@@ -49,8 +45,20 @@ export class ReviewsController {
   @Get(':id')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('reviewer', 'admin')
-  async detail(@Param('id') id: string) {
-    return this.reviews.getById({ id });
+  async detail(@Param('id') id: string, @CurrentUser() user: AuthenticatedRequestUser) {
+    return this.reviews.getById({ id, actorId: user.id, actorRole: user.role });
+  }
+
+  @Post(':id/claim')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('reviewer', 'admin')
+  @HttpCode(200)
+  async claim(@Param('id') id: string, @CurrentUser() user: AuthenticatedRequestUser) {
+    return this.reviews.claim({
+      reviewId: id,
+      actorId: user.id,
+      actorRole: user.role
+    });
   }
 
   @Post(':id/approve')
@@ -59,7 +67,7 @@ export class ReviewsController {
   @HttpCode(200)
   async approve(
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(decisionBodySchema)) body: z.infer<typeof decisionBodySchema>,
+    @Body(new ZodValidationPipe(reviewApprovePayloadSchema)) body: ReviewApprovePayload,
     @CurrentUser() user: AuthenticatedRequestUser
   ) {
     return this.reviews.approve({
@@ -76,7 +84,7 @@ export class ReviewsController {
   @HttpCode(200)
   async reject(
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(rejectBodySchema)) body: z.infer<typeof rejectBodySchema>,
+    @Body(new ZodValidationPipe(reviewRejectPayloadSchema)) body: ReviewRejectPayload,
     @CurrentUser() user: AuthenticatedRequestUser
   ) {
     return this.reviews.reject({

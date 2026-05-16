@@ -2,10 +2,41 @@ import { PrismaClient, Role } from '../src/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import bcrypt from 'bcryptjs';
 
-function requiredEnv(name: string, fallback: string): string {
+const LOCAL_PLACEHOLDER_VALUES = new Set([
+  '',
+  'replace-this-local-only',
+  'change-me',
+  'change-me-local-only',
+  'change-me-for-local-only',
+  'balance',
+  'password'
+]);
+
+function appEnv(): string {
+  return (process.env.APP_ENV || process.env.NODE_ENV || 'local').trim().toLowerCase();
+}
+
+function isNonLocal(): boolean {
+  const env = appEnv();
+  return env === 'staging' || env === 'production';
+}
+
+function requiredEnv(name: string, fallback?: string): string {
   const value = process.env[name];
-  if (value && value.trim().length > 0) return value;
-  return fallback;
+  if (value && value.trim().length > 0) return value.trim();
+  if (isNonLocal()) {
+    throw new Error(`${name} is required in ${appEnv()}`);
+  }
+  if (fallback !== undefined) return fallback;
+  throw new Error(`${name} is required`);
+}
+
+function requiredSeedSecret(name: string): string {
+  const value = requiredEnv(name, 'replace-this-local-only');
+  if (isNonLocal() && LOCAL_PLACEHOLDER_VALUES.has(value.trim().toLowerCase())) {
+    throw new Error(`${name} must be a non-placeholder value in ${appEnv()}`);
+  }
+  return value;
 }
 
 async function main() {
@@ -21,9 +52,9 @@ async function main() {
   const reviewerEmail = 'reviewer@balance.local';
   const adminEmail = 'admin@balance.local';
 
-  const consumerPassword = requiredEnv('SEED_CONSUMER_PASSWORD', 'replace-this-local-only');
-  const reviewerPassword = requiredEnv('SEED_REVIEWER_PASSWORD', 'replace-this-local-only');
-  const adminPassword = requiredEnv('SEED_ADMIN_PASSWORD', 'replace-this-local-only');
+  const consumerPassword = requiredSeedSecret('SEED_CONSUMER_PASSWORD');
+  const reviewerPassword = requiredSeedSecret('SEED_REVIEWER_PASSWORD');
+  const adminPassword = requiredSeedSecret('SEED_ADMIN_PASSWORD');
   const pepper = requiredEnv('PASSWORD_PEPPER', '').trim();
 
   const saltRounds = 10;

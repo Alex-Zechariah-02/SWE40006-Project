@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": "../../",
+    "paths": {
+      "@balance/types": ["packages/types/src/index.ts"],
+      "@balance/schemas": ["packages/schemas/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

@@ -44,19 +44,21 @@ The repository is an early, deployable foundation. It is not a complete product.
 Today it includes:
 
 - a web shell for the main browser experience
-- an API shell with health, readiness, and version responses
+- an API with health, readiness, version, authentication, document, claim, review, and audit endpoints
+- PostgreSQL, Redis, and worker services for the backend document workflow
 - a desktop shell reflecting the multi-surface product direction
 - shared packages for configuration, types, UI components, and runtime helpers
 - Docker and Compose assets for local, staging, and production environments
 - CI and deployment workflows for build, verification, packaging, and smoke checks
 
-The scope is intentional. The focus at this stage is establishing product shape, project structure, runtime wiring, and deployment path. Document processing and review workflows come later.
+The scope is intentional. The focus at this stage is establishing product shape, project structure, runtime wiring, deployment path, and the backend document workflow required before the richer user experience is built out.
 
 ## Current capabilities
 
 - public web routes at `/`, `/login`, and `/app`
-- API endpoints for `/health`, `/ready`, and `/version`
+- API endpoints for `/health`, `/ready`, `/version`, authentication, document upload, correction, claim submission, review decisions, and audit retrieval
 - proxy-friendly web-to-API routing through `/api/*`
+- local PostgreSQL, Redis, and worker services for backend workflow validation
 - a desktop shell with a secure preload bridge
 - local, staging, and production container definitions
 - automated lint, typecheck, test, build, and smoke-check support
@@ -82,12 +84,29 @@ Use Node `24.15.0` and pnpm `10.33.1`.
 corepack enable
 corepack prepare pnpm@10.33.1 --activate
 pnpm install --frozen-lockfile
+pnpm prisma:generate
 pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
 pnpm dev
 ```
+
+Backend document and review workflow tests require PostgreSQL and Redis. Use Docker Compose for the local services, then run Prisma migrations and seed either from an API container or from a shell with a reachable `DATABASE_URL`.
+
+```bash
+docker compose -f infra/compose/compose.local.yml up -d --build postgres redis
+docker compose -f infra/compose/compose.local.yml run --rm api pnpm prisma:deploy
+docker compose -f infra/compose/compose.local.yml run --rm api pnpm prisma:seed
+```
+
+To start the full local stack, run:
+
+```bash
+docker compose -f infra/compose/compose.local.yml up -d --build
+```
+
+The web app still reaches the API through `/api/*`.
 
 Useful local routes:
 

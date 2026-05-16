@@ -5,7 +5,7 @@ services:
     image: postgres:18.3
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-balance}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-balance}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-balance}
     volumes:
       # Postgres 18+ stores data under a version-specific PGDATA beneath /var/lib/postgresql.
@@ -41,7 +41,7 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       QUEUE_PROOF_NAME: ${QUEUE_PROOF_NAME:-queue_proof}
       EXTRACTION_QUEUE_NAME: ${EXTRACTION_QUEUE_NAME:-document_extract}
-      DATABASE_URL: ${DATABASE_URL:-postgresql://balance:balance@postgres:5432/balance?schema=public}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
       S3_BUCKET: ${S3_BUCKET:?S3_BUCKET is required}
       S3_REGION: ${S3_REGION:-${AWS_REGION:?AWS_REGION is required}}
@@ -77,15 +77,21 @@ services:
       GIT_COMMIT: ${GIT_COMMIT:-staging}
       BUILD_ID: ${BUILD_ID:-staging-build}
       API_PORT: 3001
-      DATABASE_URL: ${DATABASE_URL:-postgresql://balance:balance@postgres:5432/balance?schema=public}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      QUEUE_PROOF_NAME: ${QUEUE_PROOF_NAME:-queue_proof}
       EXTRACTION_QUEUE_NAME: ${EXTRACTION_QUEUE_NAME:-document_extract}
+      OCR_PROVIDER: ${OCR_PROVIDER:-tesseract}
+      TESSERACT_LANG: ${TESSERACT_LANG:-eng}
       STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
       S3_BUCKET: ${S3_BUCKET:?S3_BUCKET is required}
       S3_REGION: ${S3_REGION:-${AWS_REGION:?AWS_REGION is required}}
-      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
-      PASSWORD_PEPPER: ${PASSWORD_PEPPER:-}
+      PASSWORD_PEPPER: ${PASSWORD_PEPPER:?PASSWORD_PEPPER is required}
+      SEED_CONSUMER_PASSWORD: ${SEED_CONSUMER_PASSWORD:?SEED_CONSUMER_PASSWORD is required}
+      SEED_REVIEWER_PASSWORD: ${SEED_REVIEWER_PASSWORD:?SEED_REVIEWER_PASSWORD is required}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?SEED_ADMIN_PASSWORD is required}
       AWS_REGION: ${AWS_REGION:?AWS_REGION is required}
     expose:
       - '3001'

@@ -24,7 +24,28 @@
       "dependsOn": [
         "^build"
       ],
-      "outputs": []
+      "outputs": [],
+      "passThroughEnv": [
+        "APP_ENV",
+        "NODE_ENV",
+        "DATABASE_URL",
+        "REDIS_URL",
+        "JWT_SECRET",
+        "JWT_EXPIRES_IN",
+        "PASSWORD_PEPPER",
+        "STORAGE_DRIVER",
+        "STORAGE_FILESYSTEM_ROOT",
+        "S3_BUCKET",
+        "S3_REGION",
+        "AWS_REGION",
+        "QUEUE_PROOF_NAME",
+        "EXTRACTION_QUEUE_NAME",
+        "OCR_PROVIDER",
+        "TESSERACT_LANG",
+        "SEED_CONSUMER_PASSWORD",
+        "SEED_REVIEWER_PASSWORD",
+        "SEED_ADMIN_PASSWORD"
+      ]
     },
     "dev": {
       "cache": false,
