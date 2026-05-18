@@ -15,6 +15,11 @@ export function EnterpriseLayout({ children }: { children: ReactNode }) {
     router.replace('/login');
   }
 
+  const navLinks = [
+    { href: '/enterprise/reviews', label: 'Review Queue', roles: ['reviewer', 'admin'] },
+    { href: '/admin/audit', label: 'Audit Log', roles: ['admin'] },
+  ].filter(link => user && link.roles.includes(user.role));
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="border-b border-white/10 bg-slate-900/80 px-6 py-3">
@@ -22,16 +27,19 @@ export function EnterpriseLayout({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-6">
             <span className="text-sm font-semibold text-sky-300 tracking-wide">Balance Enterprise</span>
             <nav className="flex gap-1">
-              <Link
-                href="/enterprise/reviews"
-                className={`rounded-lg px-3 py-1.5 text-sm transition ${
-                  pathname?.startsWith('/enterprise/reviews')
-                    ? 'bg-white/10 text-slate-100'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                }`}
-              >
-                Review Queue
-              </Link>
+              {navLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={`rounded-lg px-3 py-1.5 text-sm transition ${
+                    pathname?.startsWith(link.href)
+                      ? 'bg-white/10 text-slate-100'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              ))}
             </nav>
           </div>
           <div className="flex items-center gap-3">

@@ -14,6 +14,13 @@ const POLLING_STATUSES = new Set(['queued', 'processing']);
 const CORRECTION_ALLOWED = new Set(['extracted', 'correction_required', 'corrected']);
 const CLAIM_ALLOWED = new Set(['extracted', 'corrected']);
 
+// amountMinor is stored as integer minor units (100 = 1.00)
+const MINOR_UNIT_FIELDS = new Set(['amountMinor']);
+
+function displayValue(field: DocumentField): string {
+  return field.correctedValue ?? field.value;
+}
+
 export default function DocumentDetailPage() {
   return (
     <RouteGuard allowedRoles={['consumer']}>
@@ -101,17 +108,17 @@ function DocumentDetailContent() {
         </div>
       )}
 
-      {/* Extracted fields */}
+      {/* Extracted fields — read only summary */}
       {doc.fields.length > 0 && (
         <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">Extracted fields</p>
           <div className="flex flex-col gap-2">
             {doc.fields.map((field) => (
               <div key={field.id} className="flex items-center justify-between gap-4 text-sm">
-                <span className="text-slate-400 w-32 shrink-0">{field.label}</span>
+                <span className="text-slate-400 w-36 shrink-0">{field.label ?? field.name}</span>
                 <span className="text-slate-100 flex-1">
-                  {field.correctedValue ?? field.value}
-                  {field.correctedValue && (
+                  {displayValue(field)}
+                  {field.correctedValue && field.correctedValue !== field.value && (
                     <span className="ml-2 text-xs text-slate-500 line-through">{field.value}</span>
                   )}
                 </span>
@@ -124,7 +131,7 @@ function DocumentDetailContent() {
         </div>
       )}
 
-      {/* Correction form */}
+      {/* Correction form — always editable while in allowed statuses */}
       {CORRECTION_ALLOWED.has(doc.status) && doc.fields.length > 0 && !doc.claim && (
         <CorrectionForm doc={doc} onSaved={(updated) => setDoc(updated)} />
       )}
@@ -141,7 +148,7 @@ function DocumentDetailContent() {
       {doc.claim && (
         <div className="rounded-2xl border border-purple-400/20 bg-purple-400/10 p-5">
           <p className="text-sm text-purple-300">This document has been submitted as a claim.</p>
-          <a href={`/app/claims`} className="mt-2 inline-block text-xs text-purple-400 hover:underline">View claims →</a>
+          <a href="/app/claims" className="mt-2 inline-block text-xs text-purple-400 hover:underline">View claims →</a>
         </div>
       )}
     </div>
@@ -155,6 +162,13 @@ function CorrectionForm({ doc, onSaved }: { doc: DocumentDetail; onSaved: (d: Do
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  // Sync form when doc updates after save
+  useEffect(() => {
+    setCorrections(Object.fromEntries(doc.fields.map((f) => [f.name, f.correctedValue ?? f.value])));
+    setSuccess(false);
+    setError(null);
+  }, [doc.id, doc.status]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -173,8 +187,11 @@ function CorrectionForm({ doc, onSaved }: { doc: DocumentDetail; onSaved: (d: Do
       onSaved(res.document);
       setSuccess(true);
     } catch (err) {
-      if (err instanceof BalanceApiError && err.status === 409) setError('Document cannot be corrected at this stage.');
-      else setError(err instanceof BalanceApiError ? err.error.message : 'Failed to save corrections.');
+      if (err instanceof BalanceApiError && err.status === 409) {
+        setError(`Cannot correct at current status: ${doc.status}`);
+      } else {
+        setError(err instanceof BalanceApiError ? err.error.message : 'Failed to save corrections.');
+      }
     } finally {
       setSaving(false);
     }
@@ -182,22 +199,35 @@ function CorrectionForm({ doc, onSaved }: { doc: DocumentDetail; onSaved: (d: Do
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-      <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">Correct fields</p>
-      <form onSubmit={handleSave} className="flex flex-col gap-3">
+      <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Correct fields</p>
+      <p className="text-xs text-slate-500 mb-4">
+        For <strong className="text-slate-400">Amount</strong>, enter the value in minor units (e.g. enter <code className="text-slate-300">444</code> to mean 4.44, or <code className="text-slate-300">4400</code> to mean 44.00).
+      </p>
+      <form onSubmit={handleSave} className="flex flex-col gap-4">
         {doc.fields.map((field) => (
           <div key={field.name}>
-            <label className="block text-xs font-medium text-slate-400 mb-1">{field.label}</label>
+            <label className="block text-xs font-medium text-slate-400 mb-1">
+              {field.label ?? field.name}
+              {MINOR_UNIT_FIELDS.has(field.name) && (
+                <span className="ml-2 text-slate-600 font-normal">(minor units)</span>
+              )}
+            </label>
             <input
               type="text"
               value={corrections[field.name] ?? ''}
               onChange={(e) => setCorrections((prev) => ({ ...prev, [field.name]: e.target.value }))}
               disabled={saving}
+              placeholder={field.value}
               className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-emerald-400/50 focus:outline-none disabled:opacity-50"
             />
+            <p className="mt-0.5 text-xs text-slate-600">
+              Original: {field.value}
+              {field.correctedValue && field.correctedValue !== field.value && ` · Previously corrected: ${field.correctedValue}`}
+            </p>
           </div>
         ))}
         {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
-        {success && <p className="text-sm text-emerald-300">Corrections saved.</p>}
+        {success && <p className="text-sm text-emerald-300">Corrections saved successfully.</p>}
         <button
           type="submit"
           disabled={saving}
@@ -223,7 +253,7 @@ function ClaimForm({ documentId, onSubmitted }: { documentId: string; onSubmitte
 
     setSubmitting(true);
     try {
-      await submitClaim({ documentId, purpose: purpose.trim(), note: note.trim() || undefined });
+      await submitClaim({ documentId, purpose: purpose.trim(), note: note.trim() || '' });
       onSubmitted();
     } catch (err) {
       if (err instanceof BalanceApiError && err.status === 409) setError('Document is not eligible for claim submission.');
