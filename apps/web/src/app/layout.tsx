@@ -1,17 +1,18 @@
 import type { Metadata } from 'next';
-import type { ReactNode } from 'react';
-
 import './globals.css';
+import { AuthProvider } from '../context/auth-context';
 
 export const metadata: Metadata = {
   title: 'Balance',
-  description: 'Balance document workflow platform'
+  description: 'Document workflow platform',
 };
 
-export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }

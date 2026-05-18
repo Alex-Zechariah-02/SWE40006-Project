@@ -1,0 +1,37 @@
+import type { UserRole } from '@balance/types';
+import { apiRequest, clearToken, setToken } from './client';
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  displayName: string;
+}
+
+export interface LoginResponse {
+  user: AuthUser;
+  accessToken: string;
+}
+
+export async function login(email: string, password: string): Promise<LoginResponse> {
+  const data = await apiRequest<LoginResponse>('/auth/login', {
+    method: 'POST',
+    auth: false,
+    body: JSON.stringify({ email, password }),
+  });
+  setToken(data.accessToken);
+  return data;
+}
+
+export async function getCurrentUser(): Promise<AuthUser> {
+  const data = await apiRequest<{ user: AuthUser }>('/auth/me');
+  return data.user;
+}
+
+export async function logout(): Promise<void> {
+  try {
+    await apiRequest<{ ok: boolean }>('/auth/logout', { method: 'POST' });
+  } finally {
+    clearToken();
+  }
+}
