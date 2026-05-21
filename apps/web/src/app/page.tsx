@@ -65,7 +65,7 @@ export default function HomePage() {
               {[
                 { icon: Files, label: 'Inbox', value: 'Searchable receipts, invoices, PDFs', tone: 'text-info' },
                 { icon: ReceiptText, label: 'Extract', value: 'Merchant, totals, dates, tax, line items', tone: 'text-success' },
-                { icon: ClipboardCheck, label: 'Review', value: 'Confidence, corrections, duplicate signals', tone: 'text-warning' },
+                { icon: ClipboardCheck, label: 'Review', value: 'Confidence, corrections, and duplicate signals', tone: 'text-warning' },
                 { icon: ShieldCheck, label: 'Audit', value: 'Deletion-safe history and decision evidence', tone: 'text-destructive' }
               ].map((item) => (
                 <div key={item.label} className="grid grid-cols-[2.5rem_1fr] gap-3 rounded-md border border-border bg-background/60 p-4">
