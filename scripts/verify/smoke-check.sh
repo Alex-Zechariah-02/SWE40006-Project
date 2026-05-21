@@ -60,6 +60,7 @@ assert_matches() {
 home_html="$(fetch "$app_root/")"
 login_html="$(fetch "$app_root/login")"
 app_html="$(fetch "$app_root/app")"
+enterprise_html="$(fetch "$app_root/enterprise")"
 health_json="$(fetch "$api_root$health_suffix")"
 ready_json="$(fetch "$api_root$ready_suffix")"
 version_json="$(fetch "$api_root$version_suffix")"
@@ -71,6 +72,7 @@ assert_contains "$home_html" 'Enter workspace'
 assert_contains "$login_html" 'Sign in'
 assert_contains "$login_html" 'Email'
 assert_contains "$app_html" 'Loading'
+assert_contains "$enterprise_html" 'Loading'
 
 assert_matches "$health_json" '"status"[[:space:]]*:[[:space:]]*"ok"'
 assert_matches "$health_json" '"service"[[:space:]]*:[[:space:]]*"balance-api"'
