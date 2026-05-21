@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import type { ReactNode } from 'react';
 
 import { clearToken, getToken } from '../lib/api/client';
-import { getCurrentUser, login as apiLogin, logout as apiLogout } from '../lib/api/auth';
+import { getCurrentUser, login as apiLogin, logout as apiLogout, register as apiRegister } from '../lib/api/auth';
 import type { AuthUser } from '../lib/api/auth';
 
 interface AuthState {
@@ -15,6 +15,7 @@ interface AuthState {
 
 interface AuthContextValue extends AuthState {
   login: (email: string, password: string) => Promise<AuthUser>;
+  register: (email: string, password: string, displayName: string, orgName?: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
 }
 
@@ -54,13 +55,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const register = useCallback(async (
+    email: string,
+    password: string,
+    displayName: string,
+    orgName?: string,
+  ): Promise<AuthUser> => {
+    setState((s) => ({ ...s, loading: true, error: null }));
+    try {
+      const data = await apiRegister(email, password, displayName, orgName);
+      setState({ user: data.user, loading: false, error: null });
+      return data.user;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Registration failed';
+      setState((s) => ({ ...s, loading: false, error: msg }));
+      throw err;
+    }
+  }, []);
+
   const logout = useCallback(async () => {
     await apiLogout();
     setState({ user: null, loading: false, error: null });
   }, []);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, logout }}>
+    <AuthContext.Provider value={{ ...state, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

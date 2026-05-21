@@ -9,9 +9,11 @@ import { DEFAULT_EXTRACTION_JOB_NAME, DEFAULT_EXTRACTION_QUEUE_NAME } from './ex
 export type ExtractionJobPayload = {
   documentId: string;
   extractionJobId: string;
+  storageDriver?: string;
   storageKey: string;
   contentType: string;
   originalFilename: string;
+  provider?: string;
 };
 
 function requiredEnv(name: string, fallback?: string): string {

@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Badge } from './ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 
 type EndpointState = {
   label: string;
@@ -87,18 +89,20 @@ export function ApiStatusPanel({ healthPath, versionPath }: ApiStatusPanelProps)
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {endpoints.map((item) => (
-        <article key={item.path} className="rounded-2xl border border-white/10 bg-slate-900/70 p-5">
-          <div className="flex items-center justify-between gap-4">
-            <h2 className="text-lg font-semibold text-white">{item.label}</h2>
-            <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-xs font-medium text-sky-200">
+        <Card key={item.path}>
+          <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
+            <CardTitle>{item.label}</CardTitle>
+            <Badge variant={item.status === 'Reachable' ? 'success' : item.status === 'Checking' ? 'info' : 'warning'}>
               {item.status}
-            </span>
-          </div>
-          <p className="mt-2 text-sm text-slate-400">{item.path}</p>
-          <pre className="mt-4 overflow-x-auto rounded-xl bg-slate-950/70 p-4 text-xs leading-6 text-slate-300 whitespace-pre-wrap">
-            {item.detail}
-          </pre>
-        </article>
+            </Badge>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{item.path}</p>
+            <pre className="mt-4 max-h-64 overflow-auto rounded-md border border-border bg-muted/40 p-4 font-mono text-xs leading-6 text-muted-foreground whitespace-pre-wrap">
+              {item.detail}
+            </pre>
+          </CardContent>
+        </Card>
       ))}
     </div>
   );

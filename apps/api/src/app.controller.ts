@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Inject } from '@nestjs/common';
 import { loadAppConfig } from '@balance/config';
 import type { ApiStatusPayload, ApiVersionPayload } from '@balance/types';
 
@@ -12,8 +12,8 @@ export class AppController {
   private readonly service = 'balance-api' as const;
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly extractionQueue: ExtractionQueueService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(ExtractionQueueService) private readonly extractionQueue: ExtractionQueueService
   ) {}
 
   @Get('health')
@@ -32,7 +32,12 @@ export class AppController {
     try {
       await this.prisma.checkReady();
       await this.extractionQueue.checkReady();
-    } catch {
+    } catch (err) {
+      const runtime = (process.env.APP_ENV || process.env.NODE_ENV || 'local').trim().toLowerCase();
+      if (runtime !== 'production') {
+        // Keep the HTTP response stable while still surfacing the root cause during local dev.
+        console.error('[ready] dependency check failed', err);
+      }
       throwContractHttpError(503, 'SERVICE_UNAVAILABLE', 'Service unavailable', []);
     }
 

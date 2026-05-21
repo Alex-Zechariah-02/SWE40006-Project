@@ -1,9 +1,22 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type { ClaimStatus, Prisma, ReviewStatus } from '@balance/db';
 
 import { AuditService } from '../audit/audit.service';
+import {
+  assertReviewAccessActor,
+  assertReviewDecisionActor,
+  assertReviewVisibleToActor,
+  isOrgAdminRole,
+  isReviewWorkerRole,
+  isSystemAdminRole,
+  type ActorContext
+} from '../auth/access-policy';
 import { throwContractHttpError, throwValidationError } from '../common/contract-errors';
 import { PrismaService } from '../prisma/prisma.service';
+
+function isPrismaKnownErrorCode(error: unknown, code: string): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === code;
+}
 
 function fieldLabel(name: string): string {
   switch (name) {
@@ -20,47 +33,52 @@ function fieldLabel(name: string): string {
   }
 }
 
-type ReviewActor = { actorId: string; actorRole: string };
-type ReviewVisibilityRecord = { status: ReviewStatus; reviewerId: string | null };
+type ReviewActor = ActorContext;
 
-function assertReviewVisibleToActor(review: ReviewVisibilityRecord, actor: ReviewActor) {
-  if (actor.actorRole === 'admin') return;
+function reviewTenantWhere(input: ReviewActor): Prisma.ReviewWhereInput {
+  if (isSystemAdminRole(input.actorRole)) return {};
+  if (input.actorRole === 'reviewer' && !input.organizationId) return {};
+  if ((isOrgAdminRole(input.actorRole) || isReviewWorkerRole(input.actorRole)) && input.organizationId) {
+    return { document: { organizationId: input.organizationId } };
+  }
+  throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
+}
 
-  if (actor.actorRole !== 'reviewer') {
-    throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
+function visibleReviewWhere(input: ReviewActor & { status?: ReviewStatus }): Prisma.ReviewWhereInput {
+  assertReviewAccessActor(input);
+  const tenantWhere = reviewTenantWhere(input);
+
+  if (isSystemAdminRole(input.actorRole) || isOrgAdminRole(input.actorRole)) {
+    return {
+      AND: [tenantWhere, input.status ? { status: input.status } : { status: { in: ['pending', 'in_review'] } }]
+    };
   }
 
-  if (review.status === 'pending' && !review.reviewerId) return;
-  if (review.reviewerId === actor.actorId) return;
+  const assignmentWhere: Prisma.ReviewWhereInput = input.status
+    ? input.status === 'pending'
+      ? { status: 'pending', reviewerId: null }
+      : { status: input.status, reviewerId: input.actorId }
+    : { OR: [{ status: 'pending', reviewerId: null }, { status: 'in_review', reviewerId: input.actorId }] };
 
-  throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
+  return { AND: [tenantWhere, assignmentWhere] };
+}
+
+function metricReviewWhere(input: ReviewActor): Prisma.ReviewWhereInput {
+  assertReviewAccessActor(input);
+  const tenantWhere = reviewTenantWhere(input);
+  if (isSystemAdminRole(input.actorRole) || isOrgAdminRole(input.actorRole)) return tenantWhere;
+  return { AND: [tenantWhere, { OR: [{ status: 'pending', reviewerId: null }, { reviewerId: input.actorId }] }] };
 }
 
 @Injectable()
 export class ReviewsService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly audit: AuditService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AuditService) private readonly audit: AuditService
   ) {}
 
   async listQueue(input: { limit: number; offset: number; status?: ReviewStatus } & ReviewActor) {
-    let where: Prisma.ReviewWhereInput = {};
-
-    if (input.actorRole === 'admin') {
-      where = input.status ? { status: input.status } : { status: { in: ['pending', 'in_review'] } };
-    } else if (input.actorRole === 'reviewer') {
-      if (input.status === 'pending') {
-        where = { status: 'pending' };
-      } else if (input.status) {
-        where = { status: input.status, reviewerId: input.actorId };
-      } else {
-        where = {
-          OR: [{ status: 'pending' }, { status: 'in_review', reviewerId: input.actorId }]
-        };
-      }
-    } else {
-      throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
-    }
+    const where = visibleReviewWhere(input);
 
     const [reviews, total] = await Promise.all([
       this.prisma.review.findMany({
@@ -99,10 +117,95 @@ export class ReviewsService {
         merchantName: r.document.merchantName,
         amountMinor: r.document.amountMinor,
         currency: r.document.currency,
-        submittedAt: r.claim.submittedAt.toISOString(),
+        claimPurpose: r.claim.purpose,
+        submittedAt: (r.claim.submittedAt ?? r.createdAt).toISOString(),
         updatedAt: r.updatedAt.toISOString()
       })),
       page: { limit: input.limit, offset: input.offset, total }
+    };
+  }
+
+  async metrics(input: ReviewActor) {
+    const visibleWhere = metricReviewWhere(input);
+
+    const [reviews, pending, highRisk] = await Promise.all([
+      this.prisma.review.findMany({
+        where: visibleWhere,
+        include: {
+          claim: { select: { submittedAt: true } },
+          document: {
+            select: {
+              id: true,
+              amountMinor: true,
+              merchantName: true,
+              qualityScore: true,
+              qualityWarnings: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'asc' }
+      }),
+      this.prisma.review.findMany({
+        where: { AND: [visibleWhere, { status: 'pending' }] },
+        include: { claim: { select: { submittedAt: true } }, document: { select: { amountMinor: true, merchantName: true } } },
+        orderBy: { createdAt: 'asc' },
+        take: 1
+      }),
+      this.prisma.review.count({
+        where: {
+          AND: [
+            visibleWhere,
+            {
+              OR: [{ document: { qualityScore: { lt: 70 } } }, { document: { amountMinor: { gte: 50000 } } }]
+            }
+          ]
+        }
+      })
+    ]);
+
+    const statusCounts = reviews.reduce<Record<ReviewStatus, number>>(
+      (acc, review) => {
+        acc[review.status] += 1;
+        return acc;
+      },
+      { pending: 0, in_review: 0, approved: 0, rejected: 0 }
+    );
+
+    const decided = reviews.filter((review) => review.decidedAt);
+    const averageReviewMs =
+      decided.length === 0
+        ? null
+        : Math.round(
+            decided.reduce((sum, review) => sum + ((review.decidedAt?.getTime() ?? 0) - review.createdAt.getTime()), 0) /
+              decided.length
+          );
+
+    const approved = statusCounts.approved;
+    const rejected = statusCounts.rejected;
+    const decidedTotal = approved + rejected;
+
+    return {
+      metrics: {
+        statusCounts,
+        pendingQueueSize: statusCounts.pending,
+        inReviewCount: statusCounts.in_review,
+        approvedCount: approved,
+        rejectedCount: rejected,
+        approvalRate: decidedTotal === 0 ? null : approved / decidedTotal,
+        averageReviewMs,
+        highRiskCount: highRisk,
+        oldestPending: pending[0]
+          ? {
+              id: pending[0].id,
+              claimId: pending[0].claimId,
+              documentId: pending[0].documentId,
+              merchantName: pending[0].document.merchantName,
+              amountMinor: pending[0].document.amountMinor,
+              submittedAt: (pending[0].claim.submittedAt ?? pending[0].createdAt).toISOString(),
+              createdAt: pending[0].createdAt.toISOString()
+            }
+          : null
+      }
     };
   }
 
@@ -157,7 +260,7 @@ export class ReviewsService {
           status: review.claim.status,
           purpose: review.claim.purpose,
           note: review.claim.note,
-          submittedAt: review.claim.submittedAt.toISOString()
+          submittedAt: (review.claim.submittedAt ?? review.createdAt).toISOString()
         },
         auditEvents: auditEvents.map((e) => ({
           id: e.id,
@@ -173,12 +276,13 @@ export class ReviewsService {
     };
   }
 
-  async claim(input: { reviewId: string; actorId: string; actorRole: string }) {
+  async claim(input: { reviewId: string } & ReviewActor) {
     const review = await this.prisma.review.findUnique({
       where: { id: input.reviewId },
-      include: { claim: true }
+      include: { claim: true, document: { select: { organizationId: true } } }
     });
     if (!review) throwContractHttpError(404, 'NOT_FOUND', 'Not found', []);
+    assertReviewVisibleToActor(review, input);
 
     if (review.status !== 'pending' || review.claim.status !== 'submitted') {
       throwContractHttpError(409, 'CONFLICT', 'Conflict', []);
@@ -186,7 +290,7 @@ export class ReviewsService {
 
     const result = await this.prisma.$transaction(async (tx) => {
       const updatedReview = await tx.review.update({
-        where: { id: review.id },
+        where: { id: review.id, status: 'pending' },
         data: {
           status: 'in_review',
           reviewerId: input.actorId
@@ -201,6 +305,11 @@ export class ReviewsService {
       });
 
       return { updatedReview, updatedClaim };
+    }).catch((error) => {
+      if (isPrismaKnownErrorCode(error, 'P2025')) {
+        throwContractHttpError(409, 'CONFLICT', 'Conflict', []);
+      }
+      throw error;
     });
 
     await this.audit.writeEvent({
@@ -232,7 +341,75 @@ export class ReviewsService {
     };
   }
 
-  async approve(input: { reviewId: string; actorId: string; actorRole: string; note?: string | null }) {
+  async assign(input: {
+    reviewId: string;
+    reviewerId: string;
+    actorId: string;
+    actorRole: string;
+    organizationId: string | null;
+  }) {
+    if (input.actorRole !== 'admin' && input.actorRole !== 'system_admin') {
+      throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
+    }
+
+    return await this.prisma.$transaction(async (tx) => {
+      const review = await tx.review.update({
+        where: { id: input.reviewId, status: 'pending' },
+        data: { status: 'in_review', reviewerId: input.reviewerId },
+        include: {
+          document: { select: { organizationId: true } },
+          claim: { select: { id: true } }
+        }
+      });
+
+      const reviewer = await tx.user.findFirst({
+        where: {
+          id: input.reviewerId,
+          role: 'reviewer',
+          organizationId: review.document.organizationId
+        }
+      });
+      if (!reviewer) {
+        throwContractHttpError(422, 'VALIDATION_ERROR', 'Reviewer not found or invalid', []);
+      }
+
+      await tx.claim.update({
+        where: { id: review.claim.id },
+        data: { status: 'under_review' }
+      });
+
+      return { review: { id: review.id, status: review.status, reviewerId: review.reviewerId }, reviewer };
+    });
+  }
+
+  async unassign(input: {
+    reviewId: string;
+    actorId: string;
+    actorRole: string;
+    organizationId: string | null;
+  }) {
+    if (input.actorRole !== 'admin' && input.actorRole !== 'system_admin') {
+      throwContractHttpError(403, 'FORBIDDEN', 'Forbidden', []);
+    }
+
+    return await this.prisma.$transaction(async (tx) => {
+      const review = await tx.review.update({
+        where: { id: input.reviewId, status: 'in_review' },
+        data: { status: 'pending', reviewerId: null },
+        include: { claim: { select: { id: true } } }
+      });
+
+      await tx.claim.update({
+        where: { id: review.claim.id },
+        data: { status: 'submitted' }
+      });
+
+      return { review: { id: review.id, status: review.status, reviewerId: null } };
+    });
+  }
+
+  async approve(input: { reviewId: string; note?: string | null } & ReviewActor) {
+    assertReviewDecisionActor(input);
     const review = await this.prisma.review.findUnique({
       where: { id: input.reviewId },
       include: { claim: true, document: true }
@@ -307,7 +484,8 @@ export class ReviewsService {
     };
   }
 
-  async reject(input: { reviewId: string; actorId: string; actorRole: string; note: string }) {
+  async reject(input: { reviewId: string; note: string } & ReviewActor) {
+    assertReviewDecisionActor(input);
     if (!input.note || input.note.trim().length === 0) {
       throwValidationError([{ path: 'note', message: 'note is required' }]);
     }

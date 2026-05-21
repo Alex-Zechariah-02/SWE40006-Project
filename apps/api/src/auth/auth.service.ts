@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { throwContractHttpError } from '../common/contract-errors';
@@ -9,13 +9,25 @@ type PublicUser = {
   email: string;
   role: string;
   displayName: string;
+  organizationId: string | null;
 };
+
+function isPrismaKnownErrorCode(error: unknown, code: string): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === code;
+}
+
+function prismaTargetIncludes(error: unknown, targetName: string): boolean {
+  if (typeof error !== 'object' || error === null || !('meta' in error)) return false;
+  const target = (error as { meta?: { target?: unknown } }).meta?.target;
+  if (Array.isArray(target)) return target.includes(targetName);
+  return typeof target === 'string' && target.includes(targetName);
+}
 
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly jwt: JwtService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(JwtService) private readonly jwt: JwtService
   ) {}
 
   private peppered(password: string): string {
@@ -23,12 +35,13 @@ export class AuthService {
     return `${password}${pepper}`;
   }
 
-  private toPublicUser(user: { id: string; email: string; role: string; displayName: string }): PublicUser {
+  private toPublicUser(user: { id: string; email: string; role: string; displayName: string; organizationId: string | null }): PublicUser {
     return {
       id: user.id,
       email: user.email,
       role: user.role,
-      displayName: user.displayName
+      displayName: user.displayName,
+      organizationId: user.organizationId
     };
   }
 
@@ -57,5 +70,60 @@ export class AuthService {
     }
     return { user: this.toPublicUser(user) };
   }
-}
 
+  async register(
+    email: string,
+    password: string,
+    displayName: string,
+    orgName?: string
+  ): Promise<{ user: PublicUser; accessToken: string }> {
+    const passwordHash = await bcrypt.hash(this.peppered(password), 10);
+
+    const user = await this.prisma
+      .$transaction(async (tx) => {
+        // Check for existing user — do not reveal whether email exists.
+        const existing = await tx.user.findUnique({ where: { email } });
+        if (existing) {
+          throwContractHttpError(409, 'AUTH_EMAIL_EXISTS', 'An account with this email already exists', []);
+        }
+
+        let organizationId: string | undefined;
+
+        if (orgName) {
+          const existingOrg = await tx.organization.findUnique({ where: { name: orgName } });
+          if (existingOrg) {
+            throwContractHttpError(409, 'ORG_NAME_EXISTS', 'An organization with this name already exists', []);
+          }
+
+          const org = await tx.organization.create({
+            data: { name: orgName }
+          });
+          organizationId = org.id;
+        }
+
+        return tx.user.create({
+          data: {
+            email,
+            passwordHash,
+            displayName,
+            role: orgName ? 'admin' : 'consumer',
+            organizationId: organizationId ?? null
+          }
+        });
+      })
+      .catch((error: unknown) => {
+        if (isPrismaKnownErrorCode(error, 'P2002')) {
+          if (prismaTargetIncludes(error, 'name')) {
+            throwContractHttpError(409, 'ORG_NAME_EXISTS', 'An organization with this name already exists', []);
+          }
+          if (prismaTargetIncludes(error, 'email')) {
+            throwContractHttpError(409, 'AUTH_EMAIL_EXISTS', 'An account with this email already exists', []);
+          }
+        }
+        throw error;
+      });
+
+    const accessToken = await this.jwt.sign({ sub: user.id, role: user.role, email: user.email });
+    return { user: this.toPublicUser(user), accessToken };
+  }
+}

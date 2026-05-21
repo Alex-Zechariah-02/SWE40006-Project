@@ -3,7 +3,11 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { BarChart3, FileText, FolderOpen, LogOut, ReceiptText } from 'lucide-react';
 import { useAuth } from '../context/auth-context';
+import { Button } from './ui/button';
+import { ThemeToggle } from './theme-toggle';
+import { cn } from '@/lib/utils';
 
 export function ConsumerLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
@@ -16,45 +20,54 @@ export function ConsumerLayout({ children }: { children: ReactNode }) {
   }
 
   const navLinks = [
-    { href: '/app', label: 'Dashboard' },
-    { href: '/app/documents', label: 'Documents' },
-    { href: '/app/claims', label: 'Claims' },
+    { href: '/app', label: 'Dashboard', icon: BarChart3 },
+    { href: '/app/documents', label: 'Documents', icon: FolderOpen },
+    { href: '/app/claims', label: 'Claims', icon: FileText },
   ];
 
+  function isActive(href: string) {
+    return pathname === href || (href !== '/app' && pathname?.startsWith(href));
+  }
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="border-b border-white/10 bg-slate-900/80 px-6 py-3">
-        <div className="mx-auto flex max-w-5xl items-center justify-between">
-          <div className="flex items-center gap-6">
-            <span className="text-sm font-semibold text-emerald-300 tracking-wide">Balance</span>
-            <nav className="flex gap-1">
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="sticky top-0 z-40 border-b border-border bg-background/92 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 lg:px-6">
+          <div className="flex min-w-0 items-center gap-5">
+            <Link href="/app" className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+              <ReceiptText className="size-5 text-primary" />
+              <span className="text-base tracking-normal">Balance</span>
+            </Link>
+            <nav className="hidden gap-1 md:flex">
               {navLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={`rounded-lg px-3 py-1.5 text-sm transition ${
-                    pathname === link.href
-                      ? 'bg-white/10 text-slate-100'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                  }`}
-                >
-                  {link.label}
-                </Link>
+                <Button key={link.href} asChild variant="ghost" size="sm">
+                  <Link
+                    href={link.href}
+                    className={cn(
+                      'relative gap-2',
+                      isActive(link.href)
+                        ? 'text-primary after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary'
+                        : 'hover:bg-accent/15 hover:text-foreground'
+                    )}
+                  >
+                    <link.icon className="size-4" />
+                    {link.label}
+                  </Link>
+                </Button>
               ))}
             </nav>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-500">{user?.displayName}</span>
-            <button
-              onClick={handleLogout}
-              className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200 hover:border-white/20 transition"
-            >
-              Sign out
-            </button>
+            <span className="hidden text-xs text-muted-foreground sm:inline">{user?.displayName}</span>
+            <ThemeToggle />
+            <Button type="button" variant="secondary" size="sm" onClick={handleLogout}>
+              <LogOut className="size-4" />
+              <span className="hidden sm:inline">Sign out</span>
+            </Button>
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-6 py-8">{children}</main>
+      <main className="mx-auto max-w-7xl px-4 py-6 lg:px-6">{children}</main>
     </div>
   );
 }

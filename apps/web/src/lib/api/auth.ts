@@ -6,6 +6,7 @@ export interface AuthUser {
   email: string;
   role: UserRole;
   displayName: string;
+  organizationId: string | null;
 }
 
 export interface LoginResponse {
@@ -26,6 +27,21 @@ export async function login(email: string, password: string): Promise<LoginRespo
 export async function getCurrentUser(): Promise<AuthUser> {
   const data = await apiRequest<{ user: AuthUser }>('/auth/me');
   return data.user;
+}
+
+export async function register(
+  email: string,
+  password: string,
+  displayName: string,
+  orgName?: string,
+): Promise<LoginResponse> {
+  const data = await apiRequest<LoginResponse>('/auth/register', {
+    method: 'POST',
+    auth: false,
+    body: JSON.stringify({ email, password, displayName, orgName }),
+  });
+  setToken(data.accessToken);
+  return data;
 }
 
 export async function logout(): Promise<void> {

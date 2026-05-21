@@ -80,6 +80,15 @@ Balance is currently structured as a pnpm monorepo:
 
 Use Node `24.15.0` and pnpm `10.33.1`.
 
+Two supported local workflows exist:
+
+- Host dev (recommended): run `apps/web` and `apps/api` on your machine via `pnpm dev`, with PostgreSQL + Redis running in Docker and published on `localhost`.
+- All-in-Docker: run the full stack via `docker compose up` so containers can reach each other using Compose service names such as `postgres` and `redis`.
+
+If you run the API on your host, `REDIS_URL` and `DATABASE_URL` must use `localhost` (not `redis` / `postgres`), because those hostnames only resolve inside the Compose network.
+
+Note: if you already have a local PostgreSQL service using port `5432`, the Docker Compose local stack publishes PostgreSQL on `localhost:5433` instead.
+
 ```bash
 corepack enable
 corepack prepare pnpm@10.33.1 --activate

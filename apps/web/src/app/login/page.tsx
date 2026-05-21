@@ -1,9 +1,18 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Eye, EyeOff, ReceiptText } from 'lucide-react';
 import { useAuth } from '../../context/auth-context';
 import { BalanceApiError } from '../../lib/api/client';
+import { homeForRole } from '../../lib/auth-routing';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 export default function LoginPage() {
   const { login, user, loading: authLoading } = useAuth();
@@ -13,11 +22,18 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
-  // Redirect already-authenticated users
+  // Redirect already-authenticated users.
+  // Must happen in an effect (not during render) to avoid React's
+  // "Cannot update a component (Router) while rendering a different component" warning.
+  useEffect(() => {
+    if (authLoading || !user) return;
+    router.replace(homeForRole(user.role));
+  }, [authLoading, router, user]);
+
   if (!authLoading && user) {
-    if (user.role === 'consumer') router.replace('/app');
-    else router.replace('/enterprise');
+    // Render nothing while the redirect effect runs.
     return null;
   }
 
@@ -31,8 +47,7 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       const loggedInUser = await login(email.trim(), password);
-      if (loggedInUser.role === 'consumer') router.replace('/app');
-      else router.replace('/enterprise');
+      router.replace(homeForRole(loggedInUser.role));
     } catch (err) {
       if (err instanceof BalanceApiError && err.status === 401) {
         setError('Invalid email or password.');
@@ -47,66 +62,84 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl shadow-slate-950/40">
-          <div className="mb-6">
-            <div className="mb-3 inline-flex rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-200">
-              Balance
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-100">Sign in</h1>
-            <p className="mt-1 text-sm text-slate-400">Document workflow platform</p>
+    <main className="grid min-h-screen place-items-center bg-background px-4 py-8 text-foreground">
+      <div className="absolute right-4 top-4">
+        <ThemeToggle />
+      </div>
+      <Card variant="panel" className="w-full max-w-md">
+        <CardHeader>
+          <div className="mb-2 flex items-center gap-2">
+            <span className="flex size-9 items-center justify-center rounded-md border border-primary/25 bg-primary/10 text-primary">
+              <ReceiptText className="size-5" />
+            </span>
+            <span className="text-lg font-semibold font-display">Balance</span>
           </div>
+          <CardTitle className="text-2xl">Sign in</CardTitle>
+          <p className="text-sm text-muted-foreground">Access documents, claims, reviews, and audit history.</p>
+        </CardHeader>
 
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <CardContent>
+          <form onSubmit={handleSubmit} className="grid gap-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-1">
-                Email
-              </label>
-              <input
+              <Label htmlFor="email">Email</Label>
+              <Input
                 id="email"
                 type="email"
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={submitting}
-                className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:border-emerald-400/50 focus:outline-none focus:ring-1 focus:ring-emerald-400/30 disabled:opacity-50"
                 placeholder="you@balance.local"
               />
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-1">
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={submitting}
-                className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:border-emerald-400/50 focus:outline-none focus:ring-1 focus:ring-emerald-400/30 disabled:opacity-50"
-                placeholder="••••••••"
-              />
+              <Label htmlFor="password">Password</Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={submitting}
+                  className="pr-10"
+                  placeholder="Password"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="absolute right-0 top-0"
+                  onClick={() => setShowPassword((value) => !value)}
+                >
+                  {showPassword ? <EyeOff /> : <Eye />}
+                </Button>
+              </div>
             </div>
 
             {error && (
-              <p role="alert" className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-2.5 text-sm text-red-300">
-                {error}
-              </p>
+              <Alert role="alert" variant="destructive">{error}</Alert>
             )}
 
-            <button
+            <Button
               type="submit"
               disabled={submitting}
-              className="mt-2 w-full rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2.5 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="mt-2 w-full"
             >
               {submitting ? 'Signing in…' : 'Sign in'}
-            </button>
+            </Button>
           </form>
-        </div>
-      </div>
+
+          <p className="mt-4 text-center text-sm text-muted-foreground">
+            Don&apos;t have an account?{' '}
+            <Link href="/register" className="font-medium text-foreground underline underline-offset-4 hover:text-primary">
+              Sign up
+            </Link>
+          </p>
+        </CardContent>
+      </Card>
     </main>
   );
 }

@@ -8,7 +8,7 @@ import { ContractHttpExceptionFilter } from './common/contract-http-exception.fi
 
 async function bootstrap() {
   const config = loadAppConfig();
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { logger: ['error', 'warn'] });
   app.enableShutdownHooks();
   app.useGlobalFilters(new ContractHttpExceptionFilter());
   await app.listen(config.apiPort, '0.0.0.0');

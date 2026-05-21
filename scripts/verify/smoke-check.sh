@@ -65,18 +65,12 @@ ready_json="$(fetch "$api_root$ready_suffix")"
 version_json="$(fetch "$api_root$version_suffix")"
 
 assert_contains "$home_html" 'Balance'
-assert_contains "$home_html" 'Document workflow platform'
-assert_contains "$home_html" "$SMOKE_HEALTH_PATH"
-assert_contains "$home_html" "$SMOKE_VERSION_PATH"
-assert_contains "$login_html" '/login'
-assert_contains "$login_html" 'Login page'
-assert_contains "$app_html" '/app'
-assert_contains "$app_html" 'Application workspace'
-
-if [ -n "$SMOKE_EXPECT_ENV" ]; then
-  expected_env_label="$(printf '%s' "$SMOKE_EXPECT_ENV" | tr '[:lower:]' '[:upper:]')"
-  assert_contains "$home_html" "$expected_env_label"
-fi
+assert_contains "$home_html" 'Balance workspace'
+assert_contains "$home_html" 'Textract-first'
+assert_contains "$home_html" 'Enter workspace'
+assert_contains "$login_html" 'Sign in'
+assert_contains "$login_html" 'Email'
+assert_contains "$app_html" 'Loading'
 
 assert_matches "$health_json" '"status"[[:space:]]*:[[:space:]]*"ok"'
 assert_matches "$health_json" '"service"[[:space:]]*:[[:space:]]*"balance-api"'

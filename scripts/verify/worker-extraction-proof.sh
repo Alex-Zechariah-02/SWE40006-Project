@@ -2,13 +2,20 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-COMPOSE_FILE="${COMPOSE_FILE:-infra/compose/compose.local.yml}"
+DEFAULT_COMPOSE_FILE="infra/compose/compose.local.yml"
+if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+  DEFAULT_COMPOSE_FILE="infra/compose/compose.ci-proof.yml"
+fi
+COMPOSE_FILE="${COMPOSE_FILE:-$DEFAULT_COMPOSE_FILE}"
 COMPOSE_PROJECT_NAME="${WORKER_EXTRACTION_PROOF_COMPOSE_PROJECT:-balance-worker-extraction-proof}"
 
 cd "$ROOT_DIR"
 
 export APP_ENV="${APP_ENV:-local}"
-export DATABASE_URL="${WORKER_EXTRACTION_PROOF_DATABASE_URL:-postgresql://balance:balance@postgres:5432/balance?schema=public}"
+export POSTGRES_USER="${WORKER_EXTRACTION_PROOF_POSTGRES_USER:-balance}"
+export POSTGRES_PASSWORD="${WORKER_EXTRACTION_PROOF_POSTGRES_PASSWORD:-balance}"
+export POSTGRES_DB="${WORKER_EXTRACTION_PROOF_POSTGRES_DB:-balance}"
+export DATABASE_URL="${WORKER_EXTRACTION_PROOF_DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public}"
 export REDIS_URL="${WORKER_EXTRACTION_PROOF_REDIS_URL:-redis://redis:6379}"
 export QUEUE_PROOF_NAME="${QUEUE_PROOF_NAME:-queue_proof}"
 export EXTRACTION_QUEUE_NAME="${EXTRACTION_QUEUE_NAME:-document_extract}"
@@ -16,11 +23,17 @@ export JWT_SECRET="${JWT_SECRET:-replace-this-local-only}"
 export PASSWORD_PEPPER="${PASSWORD_PEPPER:-replace-this-local-only}"
 export STORAGE_DRIVER="${STORAGE_DRIVER:-filesystem}"
 export STORAGE_FILESYSTEM_ROOT="${STORAGE_FILESYSTEM_ROOT:-/data/balance-storage}"
-export OCR_PROVIDER="${OCR_PROVIDER:-tesseract}"
-export TESSERACT_LANG="${TESSERACT_LANG:-eng}"
+export OCR_PROVIDER="${OCR_PROVIDER:-textract}"
 
 compose() {
   docker compose -p "$COMPOSE_PROJECT_NAME" -f "$COMPOSE_FILE" "$@"
+}
+
+dump_diagnostics() {
+  printf '\n[worker-extraction-proof] diagnostics: docker compose ps\n' >&2
+  compose ps >&2 || true
+  printf '\n[worker-extraction-proof] diagnostics: docker compose logs (postgres, redis, api, worker)\n' >&2
+  compose logs --no-color --tail 200 postgres redis api worker >&2 || true
 }
 
 cleanup() {
@@ -44,6 +57,7 @@ for attempt in $(seq 1 30); do
     break
   fi
   if [ "$attempt" -eq 30 ]; then
+    dump_diagnostics
     printf 'worker health did not become ready\n' >&2
     exit 1
   fi
@@ -55,6 +69,7 @@ for attempt in $(seq 1 30); do
     break
   fi
   if [ "$attempt" -eq 30 ]; then
+    dump_diagnostics
     printf 'worker dependency readiness did not become ready\n' >&2
     exit 1
   fi
@@ -66,13 +81,34 @@ for attempt in $(seq 1 30); do
     break
   fi
   if [ "$attempt" -eq 30 ]; then
+    dump_diagnostics
     printf 'api readiness did not become ready\n' >&2
     exit 1
   fi
   sleep 2
 done
 
-compose exec -T api node - <<'NODE'
+FIXTURE_PATH="scripts/verify/fixtures/proof-receipt.jpg"
+if [ ! -f "$FIXTURE_PATH" ]; then
+  printf 'Missing proof receipt fixture at %s\n' "$FIXTURE_PATH" >&2
+  exit 1
+fi
+
+FIXTURE_CONTAINER_PATH="/tmp/proof-receipt.jpg"
+if ! compose exec -T api sh -c "cat > '$FIXTURE_CONTAINER_PATH'" < "$FIXTURE_PATH"; then
+  dump_diagnostics
+  printf 'Failed to copy proof receipt fixture into api container at %s\n' "$FIXTURE_CONTAINER_PATH" >&2
+  exit 1
+fi
+
+if ! compose exec -T api sh -c "test -s '$FIXTURE_CONTAINER_PATH'"; then
+  dump_diagnostics
+  printf 'Proof receipt fixture in api container is missing or empty at %s\n' "$FIXTURE_CONTAINER_PATH" >&2
+  exit 1
+fi
+
+if ! compose exec -T api node - <<'NODE'
+import { readFileSync } from 'node:fs';
 const apiBase = 'http://localhost:3001';
 const requiredAuditActions = [
   'document.uploaded',
@@ -80,51 +116,6 @@ const requiredAuditActions = [
   'extraction.started',
   'extraction.completed'
 ];
-
-function escapePdfText(value) {
-  return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-}
-
-function makeProofPdf() {
-  const lines = ['BALANCE MART', '2026-05-16', '12.34'];
-  const text = [
-    'BT',
-    '/F1 42 Tf',
-    '72 690 Td',
-    `(${escapePdfText(lines[0])}) Tj`,
-    '0 -64 Td',
-    `(${escapePdfText(lines[1])}) Tj`,
-    '0 -64 Td',
-    `(${escapePdfText(lines[2])}) Tj`,
-    'ET'
-  ].join('\n');
-
-  const stream = `${text}\n`;
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-    `<< /Length ${Buffer.byteLength(stream, 'ascii')} >>\nstream\n${stream}endstream`
-  ];
-
-  let pdf = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n';
-  const offsets = [0];
-  objects.forEach((object, index) => {
-    offsets.push(Buffer.byteLength(pdf, 'binary'));
-    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
-  });
-  const xrefOffset = Buffer.byteLength(pdf, 'binary');
-  pdf += `xref\n0 ${objects.length + 1}\n`;
-  pdf += '0000000000 65535 f \n';
-  for (const offset of offsets.slice(1)) {
-    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
-  }
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`;
-  pdf += `startxref\n${xrefOffset}\n%%EOF\n`;
-
-  return Buffer.from(pdf, 'binary');
-}
 
 async function fetchJson(path, options = {}) {
   const response = await fetch(`${apiBase}${path}`, options);
@@ -159,10 +150,13 @@ const login = await fetchJson('/auth/login', {
 const token = login.accessToken;
 assert(token, 'login did not return an access token');
 
+const imageBytes = readFileSync('/tmp/proof-receipt.jpg');
+assert(imageBytes.length > 0, 'proof receipt fixture is empty');
+
 const form = new FormData();
 form.set('label', 'Worker extraction proof');
 form.set('notes', 'Deterministic OCR proof fixture');
-form.set('file', new Blob([makeProofPdf()], { type: 'application/pdf' }), 'worker-extraction-proof.pdf');
+form.set('file', new Blob([imageBytes], { type: 'image/jpeg' }), 'proof-receipt.jpg');
 
 const upload = await fetchJson('/documents', {
   method: 'POST',
@@ -212,3 +206,8 @@ console.log(
   })
 );
 NODE
+then
+  dump_diagnostics
+  printf '\n[worker-extraction-proof] proof failed\n' >&2
+  exit 1
+fi

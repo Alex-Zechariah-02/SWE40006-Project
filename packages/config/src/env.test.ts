@@ -26,6 +26,10 @@ describe('loadAppConfig', () => {
       loadAppConfig({
         PRODUCT_NAME: 'Balance',
         NODE_ENV: 'production',
+        STORAGE_DRIVER: 's3',
+        S3_BUCKET: 'ci-placeholder-only',
+        S3_REGION: 'ap-southeast-5',
+        AWS_REGION: 'ap-southeast-5',
         PROJECT_SLUG: 'balance',
         DEPLOYMENT_NAMESPACE: 'swe40006-project',
         PUBLIC_HTTP_PORT: '8080',
@@ -50,6 +54,9 @@ describe('loadAppConfig', () => {
       apiBasePath: '/gateway',
       apiHealthPath: '/gateway/health',
       apiVersionPath: '/gateway/version',
+      storageDriver: 's3',
+      s3Bucket: 'ci-placeholder-only',
+      s3Region: 'ap-southeast-5',
       gitCommit: 'abc1234',
       buildId: 'build-42'
     });

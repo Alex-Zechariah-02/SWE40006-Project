@@ -9,9 +9,10 @@ import { AuditModule } from './audit/audit.module';
 import { DocumentsModule } from './documents/documents.module';
 import { ClaimsModule } from './claims/claims.module';
 import { ReviewsModule } from './reviews/reviews.module';
+import { EnterpriseModule } from './enterprise/enterprise.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, StorageModule, QueueModule, AuditModule, DocumentsModule, ClaimsModule, ReviewsModule],
+  imports: [PrismaModule, AuthModule, StorageModule, QueueModule, AuditModule, DocumentsModule, ClaimsModule, ReviewsModule, EnterpriseModule],
   controllers: [AppController]
 })
 export class AppModule {}

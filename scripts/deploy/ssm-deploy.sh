@@ -9,15 +9,6 @@ require_var() {
   fi
 }
 
-require_one_of() {
-  local first="$1"
-  local second="$2"
-  if [ -z "${!first:-}" ] && [ -z "${!second:-}" ]; then
-    printf '%s or %s is required\n' "$first" "$second" >&2
-    exit 1
-  fi
-}
-
 reject_placeholder() {
   local name="$1"
   local value="${!name:-}"
@@ -53,7 +44,22 @@ if [ "$APP_ENV" = 'staging' ] || [ "$APP_ENV" = 'production' ]; then
   require_var SEED_REVIEWER_PASSWORD
   require_var SEED_ADMIN_PASSWORD
   require_var S3_BUCKET
-  require_one_of AWS_REGION S3_REGION
+  require_var AWS_REGION
+
+  if [ -n "${S3_REGION:-}" ] && [ "$S3_REGION" != "$AWS_REGION" ]; then
+    printf 'S3_REGION must match AWS_REGION in %s (S3_REGION=%s AWS_REGION=%s)\n' "$APP_ENV" "$S3_REGION" "$AWS_REGION" >&2
+    exit 1
+  fi
+
+  if [ -n "${STORAGE_DRIVER:-}" ] && [ "$STORAGE_DRIVER" != 's3' ]; then
+    printf 'STORAGE_DRIVER must be s3 in %s (got %s)\n' "$APP_ENV" "$STORAGE_DRIVER" >&2
+    exit 1
+  fi
+
+  if [ -n "${OCR_PROVIDER:-}" ] && [ "$OCR_PROVIDER" != 'textract' ]; then
+    printf 'OCR_PROVIDER must be textract in %s (got %s)\n' "$APP_ENV" "$OCR_PROVIDER" >&2
+    exit 1
+  fi
 
   case "$DATABASE_URL" in
     *'balance:balance@'*)
@@ -147,11 +153,16 @@ export NEXT_PUBLIC_API_VERSION_PATH="${NEXT_PUBLIC_API_VERSION_PATH:-$API_VERSIO
 export GRAFANA_ADMIN_PASSWORD
 
 # Backend runtime variables (propagated from GitHub Actions / EC2 environment).
-if [ "$APP_ENV" = 'local' ]; then
-  export DATABASE_URL="${DATABASE_URL:-postgresql://balance:balance@postgres:5432/balance?schema=public}"
-else
-  export DATABASE_URL
-fi
+case "$APP_ENV" in
+  staging|production)
+    ;;
+  *)
+    printf 'Unsupported APP_ENV for AWS deployment: %s\n' "$APP_ENV" >&2
+    exit 1
+    ;;
+esac
+
+export DATABASE_URL
 export POSTGRES_USER="${POSTGRES_USER:-balance}"
 export POSTGRES_PASSWORD
 export POSTGRES_DB="${POSTGRES_DB:-balance}"
@@ -159,25 +170,25 @@ export REDIS_URL="${REDIS_URL:-redis://redis:6379}"
 export EXTRACTION_QUEUE_NAME="${EXTRACTION_QUEUE_NAME:-document_extract}"
 export QUEUE_PROOF_NAME="${QUEUE_PROOF_NAME:-queue_proof}"
 
-default_storage_driver='filesystem'
-case "$APP_ENV" in
-  local)
-    default_storage_driver='filesystem'
-    ;;
-  staging|production)
-    default_storage_driver='s3'
-    ;;
-  *)
-    printf 'Unsupported APP_ENV for deployment: %s\n' "$APP_ENV" >&2
+export STORAGE_DRIVER="${STORAGE_DRIVER:-s3}"
+if [ "$APP_ENV" = 'staging' ] || [ "$APP_ENV" = 'production' ]; then
+  if [ "$STORAGE_DRIVER" != 's3' ]; then
+    printf 'STORAGE_DRIVER must be s3 in %s (got %s)\n' "$APP_ENV" "$STORAGE_DRIVER" >&2
     exit 1
-    ;;
-esac
-
-export STORAGE_DRIVER="${STORAGE_DRIVER:-$default_storage_driver}"
-export STORAGE_FILESYSTEM_ROOT="${STORAGE_FILESYSTEM_ROOT:-/data/balance-storage}"
+  fi
+  export STORAGE_DRIVER='s3'
+fi
 export S3_BUCKET="${S3_BUCKET:-}"
-export S3_REGION="${S3_REGION:-}"
-export AWS_REGION="${AWS_REGION:-${S3_REGION:-}}"
+export AWS_REGION="${AWS_REGION:-}"
+export S3_REGION="${S3_REGION:-$AWS_REGION}"
+if [ "$APP_ENV" = 'staging' ] || [ "$APP_ENV" = 'production' ]; then
+  require_var AWS_REGION
+  require_var S3_REGION
+  if [ "$S3_REGION" != "$AWS_REGION" ]; then
+    printf 'S3_REGION must match AWS_REGION in %s (S3_REGION=%s AWS_REGION=%s)\n' "$APP_ENV" "$S3_REGION" "$AWS_REGION" >&2
+    exit 1
+  fi
+fi
 
 export JWT_SECRET
 export JWT_EXPIRES_IN="${JWT_EXPIRES_IN:-1h}"
@@ -186,8 +197,14 @@ export SEED_CONSUMER_PASSWORD="${SEED_CONSUMER_PASSWORD:-replace-this-local-only
 export SEED_REVIEWER_PASSWORD="${SEED_REVIEWER_PASSWORD:-replace-this-local-only}"
 export SEED_ADMIN_PASSWORD="${SEED_ADMIN_PASSWORD:-replace-this-local-only}"
 
-export OCR_PROVIDER="${OCR_PROVIDER:-tesseract}"
-export TESSERACT_LANG="${TESSERACT_LANG:-eng}"
+export OCR_PROVIDER="${OCR_PROVIDER:-textract}"
+if [ "$APP_ENV" = 'staging' ] || [ "$APP_ENV" = 'production' ]; then
+  if [ "$OCR_PROVIDER" != 'textract' ]; then
+    printf 'OCR_PROVIDER must be textract in %s (got %s)\n' "$APP_ENV" "$OCR_PROVIDER" >&2
+    exit 1
+  fi
+  export OCR_PROVIDER='textract'
+fi
 
 docker compose -f "$COMPOSE_FILE" down --remove-orphans
 docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans

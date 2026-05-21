@@ -86,6 +86,13 @@ export class ContractHttpExceptionFilter implements ExceptionFilter {
     const isHttp = exception instanceof HttpException;
     const status = isHttp ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
 
+    // Developer visibility: log unexpected (non-HttpException) failures in non-production.
+    // This keeps the HTTP response contract-stable while still surfacing root causes locally.
+    const runtime = (process.env.APP_ENV || process.env.NODE_ENV || 'local').trim().toLowerCase();
+    if (!isHttp && runtime !== 'production') {
+      console.error('[exception]', request.method, request.originalUrl || request.url, exception);
+    }
+
     if (isHttp) {
       const exResponse = exception.getResponse();
 

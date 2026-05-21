@@ -27,10 +27,22 @@ export const seedUsers = {
     displayName: 'Demo Reviewer 2',
     role: Role.reviewer
   },
+  staff: {
+    email: 'staff@balance.local',
+    password: process.env.SEED_STAFF_PASSWORD || 'ci-staff-password',
+    displayName: 'Demo Staff',
+    role: Role.staff
+  },
   admin: {
     email: 'admin@balance.local',
     password: process.env.SEED_ADMIN_PASSWORD || 'ci-admin-password',
     displayName: 'Demo Admin',
+    role: Role.system_admin
+  },
+  orgAdmin: {
+    email: 'org-admin@balance.local',
+    password: process.env.SEED_ADMIN_PASSWORD || 'ci-admin-password',
+    displayName: 'Demo Org Admin',
     role: Role.admin
   }
 } as const;
@@ -43,7 +55,7 @@ export type TestContext = {
 function ensureTestEnv() {
   process.env.APP_ENV ??= 'local';
   process.env.NODE_ENV ??= 'test';
-  process.env.DATABASE_URL ??= 'postgresql://ci:ci@127.0.0.1:5432/ci?schema=public';
+  process.env.DATABASE_URL ??= 'postgresql://balance:balance@127.0.0.1:5433/balance?schema=public';
   process.env.REDIS_URL ??= 'redis://127.0.0.1:6379';
   process.env.JWT_SECRET ??= 'ci-placeholder-only';
   process.env.JWT_EXPIRES_IN ??= '1h';
@@ -52,7 +64,7 @@ function ensureTestEnv() {
   process.env.STORAGE_FILESYSTEM_ROOT ??= '/tmp/balance-api-test-storage';
   process.env.QUEUE_PROOF_NAME ??= 'queue_proof';
   process.env.EXTRACTION_QUEUE_NAME ??= 'document_extract';
-  process.env.OCR_PROVIDER ??= 'tesseract';
+  process.env.OCR_PROVIDER ??= 'textract';
   process.env.TESSERACT_LANG ??= 'eng';
 }
 
@@ -86,24 +98,27 @@ export async function closeTestContext(ctx: TestContext) {
 }
 
 export async function ensureSeedUsers(prisma: PrismaClient) {
-  await prisma.organization.upsert({
+  const demoOrg = await prisma.organization.upsert({
     where: { name: 'Demo Organization' },
     update: {},
     create: { name: 'Demo Organization' }
   });
 
   for (const user of Object.values(seedUsers)) {
+    const organizationId = user.role === Role.admin || user.role === Role.staff ? demoOrg.id : null;
     await prisma.user.upsert({
       where: { email: user.email },
       update: {
         displayName: user.displayName,
         role: user.role,
+        organizationId,
         passwordHash: await bcrypt.hash(peppered(user.password), 10)
       },
       create: {
         email: user.email,
         displayName: user.displayName,
         role: user.role,
+        organizationId,
         passwordHash: await bcrypt.hash(peppered(user.password), 10)
       }
     });
@@ -129,7 +144,7 @@ export async function login(app: INestApplication, key: keyof typeof seedUsers) 
   return {
     response,
     token: response.body.accessToken as string,
-    user: response.body.user as { id: string; email: string; role: string; displayName: string }
+    user: response.body.user as { id: string; email: string; role: string; displayName: string; organizationId: string | null }
   };
 }
 
@@ -144,23 +159,34 @@ export async function createDocument(
     status: DocumentStatus;
     label?: string | null;
     notes?: string | null;
+    originalFilename?: string;
+    merchantName?: string | null;
+    documentDate?: string | null;
+    transactionDate?: string | null;
+    amountMinor?: number | null;
+    currency?: string | null;
+    category?: string | null;
+    organizationId?: string | null;
   }
 ) {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return prisma.document.create({
     data: {
       ownerId: input.ownerId,
-      originalFilename: `receipt-${suffix}.pdf`,
+      organizationId: input.organizationId ?? null,
+      originalFilename: input.originalFilename ?? `receipt-${suffix}.pdf`,
       contentType: 'application/pdf',
       sizeBytes: 12,
       storageKey: `documents/test-${suffix}/original.pdf`,
       status: input.status,
       label: input.label ?? null,
       notes: input.notes ?? null,
-      merchantName: 'Demo Merchant',
-      documentDate: '2026-05-16',
-      amountMinor: 1299,
-      currency: 'AUD'
+      merchantName: input.merchantName ?? 'Demo Merchant',
+      documentDate: input.documentDate ?? '2026-05-16',
+      transactionDate: input.transactionDate ?? input.documentDate ?? '2026-05-16',
+      amountMinor: input.amountMinor ?? 1299,
+      currency: input.currency ?? 'AUD',
+      category: input.category ?? null
     }
   });
 }

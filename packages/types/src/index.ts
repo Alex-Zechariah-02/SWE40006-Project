@@ -1,7 +1,7 @@
 export type AppEnvironment = 'local' | 'staging' | 'production';
 export type StorageDriver = 'filesystem' | 's3';
 
-export const USER_ROLES = ['consumer', 'reviewer', 'admin'] as const;
+export const USER_ROLES = ['consumer', 'reviewer', 'staff', 'admin', 'system_admin'] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
 export const DOCUMENT_STATUSES = [
@@ -21,7 +21,7 @@ export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
 export const EXTRACTION_JOB_STATUSES = ['queued', 'processing', 'completed', 'failed'] as const;
 export type ExtractionJobStatus = (typeof EXTRACTION_JOB_STATUSES)[number];
 
-export const CLAIM_STATUSES = ['submitted', 'under_review', 'approved', 'rejected'] as const;
+export const CLAIM_STATUSES = ['draft', 'submitted', 'under_review', 'approved', 'rejected'] as const;
 export type ClaimStatus = (typeof CLAIM_STATUSES)[number];
 
 export const REVIEW_STATUSES = ['pending', 'in_review', 'approved', 'rejected'] as const;
@@ -30,17 +30,107 @@ export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 export const ENTITY_TYPES = ['document', 'extraction_job', 'claim', 'review'] as const;
 export type EntityType = (typeof ENTITY_TYPES)[number];
 
+export const EXTRACTION_PROVIDERS = ['textract'] as const;
+export type ExtractionProvider = (typeof EXTRACTION_PROVIDERS)[number];
+
+export const FIELD_NAMES = [
+  'merchantName',
+  'documentDate',
+  'amountMinor',
+  'currency',
+  'vendorAddress',
+  'vendorPhone',
+  'vendorTaxId',
+  'merchantLegalName',
+  'merchantUrl',
+  'invoiceReceiptId',
+  'receiptId',
+  'invoiceId',
+  'orderId',
+  'receiverName',
+  'receiverAddress',
+  'customerName',
+  'customerAddress',
+  'customerEmail',
+  'customerPhone',
+  'customerTaxId',
+  'dueDate',
+  'orderDate',
+  'invoiceDate',
+  'deliveryDate',
+  'transactionTime',
+  'total',
+  'subtotal',
+  'tax',
+  'taxRate',
+  'taxableAmount',
+  'amountDue',
+  'amountPaid',
+  'discount',
+  'voucher',
+  'shippingCharge',
+  'serviceCharge',
+  'gratuity',
+  'roundingAdjustment',
+  'paymentType',
+  'paymentCardLast4',
+  'paymentReference',
+  'paymentTerms',
+  'poNumber',
+  'cashierName',
+  'serverName',
+  'tableNumber',
+  'coverCount',
+  'supplierName',
+  'supplierEmail',
+  'supplierPhone',
+  'supplierWebsite',
+  'supplierTaxId',
+  'supplierRegistration',
+  'remittanceAddress',
+  'bankAccount',
+  'vendorStreet',
+  'vendorCity',
+  'vendorState',
+  'vendorCountry',
+  'vendorPostalCode',
+  'receiverStreet',
+  'receiverCity',
+  'receiverState',
+  'receiverCountry',
+  'receiverPostalCode',
+  'lineItemDescription',
+  'lineItemQuantity',
+  'lineItemUnit',
+  'lineItemUnitPrice',
+  'lineItemTotalPrice',
+  'lineItemProductCode',
+  'lineItemTax',
+  'lineItemTaxRate',
+  'lineItemDiscount',
+  'lineItemCategory',
+  'lineItemTransactionDate',
+] as const;
+export type FieldName = (typeof FIELD_NAMES)[number];
+
 export const AUDIT_ACTIONS = [
   'document.uploaded',
   'extraction.queued',
   'extraction.started',
   'extraction.completed',
   'extraction.failed',
+  'extraction.warning',
   'document.corrected',
+  'document.metadata_updated',
+  'document.deleted',
   'claim.submitted',
+  'claim.resubmitted',
+  'claim.recalled',
+  'claim.deleted',
   'review.started',
   'review.approved',
-  'review.rejected'
+  'review.rejected',
+  'documents.bulk_deleted',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "pnpm exec tsc -p tsconfig.build.json",
-    "dev": "pnpm exec tsx src/main.ts",
+    "dev": "node --env-file=../../.env dist/main.js",
     "lint": "pnpm exec eslint -c ../../eslint.config.mjs src test --ext .ts",
     "start": "node dist/main.js",
     "typecheck": "pnpm exec tsc --noEmit -p tsconfig.json",

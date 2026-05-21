@@ -8,6 +8,7 @@ export interface ReviewQueueItem {
   documentId: string;
   status: ReviewStatus;
   consumerName: string;
+  claimPurpose: string;
   originalFilename: string;
   merchantName: string | null;
   amountMinor: number | null;
@@ -75,6 +76,30 @@ export async function listReviewQueue(params?: {
   return apiRequest(`/reviews/queue${qs}`);
 }
 
+export interface ReviewMetrics {
+  statusCounts: Record<string, number>;
+  pendingQueueSize: number;
+  inReviewCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+  approvalRate: number | null;
+  averageReviewMs: number | null;
+  highRiskCount: number;
+  oldestPending: {
+    id: string;
+    claimId: string;
+    documentId: string;
+    merchantName: string | null;
+    amountMinor: number | null;
+    submittedAt: string;
+    createdAt: string;
+  } | null;
+}
+
+export async function getReviewMetrics(): Promise<{ metrics: ReviewMetrics }> {
+  return apiRequest('/reviews/metrics');
+}
+
 export async function getReviewDetail(id: string): Promise<{ review: ReviewDetail }> {
   return apiRequest(`/reviews/${id}`);
 }
@@ -84,6 +109,22 @@ export async function claimReview(id: string): Promise<{
   claim: { id: string; status: string; updatedAt: string };
 }> {
   return apiRequest(`/reviews/${id}/claim`, { method: 'POST' });
+}
+
+export async function assignReview(
+  id: string,
+  reviewerId: string,
+): Promise<{ review: { id: string; status: string; reviewerId: string | null } }> {
+  return apiRequest(`/reviews/${id}/assign`, {
+    method: 'POST',
+    body: JSON.stringify({ reviewerId }),
+  });
+}
+
+export async function unassignReview(
+  id: string,
+): Promise<{ review: { id: string; status: string; reviewerId: null } }> {
+  return apiRequest(`/reviews/${id}/assign`, { method: 'DELETE' });
 }
 
 export async function approveReview(

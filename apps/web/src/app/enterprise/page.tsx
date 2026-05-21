@@ -6,7 +6,7 @@ import { RouteGuard } from '../../components/route-guard';
 
 export default function EnterprisePage() {
   return (
-    <RouteGuard allowedRoles={['reviewer', 'admin']}>
+    <RouteGuard allowedRoles={['staff', 'admin', 'system_admin']}>
       <Redirect />
     </RouteGuard>
   );
@@ -14,6 +14,6 @@ export default function EnterprisePage() {
 
 function Redirect() {
   const router = useRouter();
-  useEffect(() => { router.replace('/enterprise/reviews'); }, [router]);
-  return <p className="text-sm text-slate-400 p-8">Redirecting…</p>;
+  useEffect(() => { router.replace('/enterprise/documents'); }, [router]);
+  return <p className="p-8 text-sm text-muted-foreground">Redirecting…</p>;
 }

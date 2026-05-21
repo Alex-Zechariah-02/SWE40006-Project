@@ -73,6 +73,317 @@ describe.sequential('Balance API backend workflow', () => {
       .expect(404);
   });
 
+  it('proves enterprise registration does not share organizations by name', async () => {
+    const suffix = Date.now().toString(36);
+    const orgName = `Acme ${suffix}`;
+
+    const registered = await request(ctx.app.getHttpServer())
+      .post('/auth/register')
+      .send({
+        email: `owner-${suffix}@balance.local`,
+        password: 'ValidPass1!',
+        displayName: 'Acme Owner',
+        orgName
+      })
+      .expect(201);
+
+    expect(registered.body.user.role).toBe('admin');
+    expect(registered.body.user.organizationId).toEqual(expect.any(String));
+
+    await request(ctx.app.getHttpServer())
+      .get('/auth/me')
+      .set('Authorization', auth(registered.body.accessToken))
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.user.organizationId).toBe(registered.body.user.organizationId);
+      });
+
+    await request(ctx.app.getHttpServer())
+      .post('/auth/register')
+      .send({
+        email: `other-${suffix}@balance.local`,
+        password: 'ValidPass1!',
+        displayName: 'Other Owner',
+        orgName
+      })
+      .expect(409)
+      .expect((response) => {
+        expect(response.body.error.code).toBe('ORG_NAME_EXISTS');
+      });
+  });
+
+  it('proves enterprise member and global admin boundaries', async () => {
+    const orgAdmin = await login(ctx.app, 'orgAdmin');
+    const systemAdmin = await login(ctx.app, 'admin');
+
+    await request(ctx.app.getHttpServer())
+      .post('/enterprise/members')
+      .set('Authorization', auth(orgAdmin.token))
+      .send({
+        email: `weak-${Date.now()}@balance.local`,
+        password: 'password',
+        displayName: 'Weak Password'
+      })
+      .expect(422);
+
+    // Cannot demote the last admin (including yourself).
+    await request(ctx.app.getHttpServer())
+      .patch(`/enterprise/members/${orgAdmin.user.id}/role`)
+      .set('Authorization', auth(orgAdmin.token))
+      .send({ role: 'staff' })
+      .expect(409);
+
+    const staffEmail = `staff-${Date.now()}@balance.local`;
+    const created = await request(ctx.app.getHttpServer())
+      .post('/enterprise/members')
+      .set('Authorization', auth(orgAdmin.token))
+      .send({
+        email: staffEmail,
+        password: 'ValidPass1!',
+        displayName: 'Team Staff',
+        role: 'staff'
+      })
+      .expect(201);
+
+    expect(created.body.member).toMatchObject({
+      email: staffEmail,
+      role: 'staff',
+      organizationId: orgAdmin.user.organizationId
+    });
+
+    const adminEmail = `admin-${Date.now()}@balance.local`;
+    const createdAdmin = await request(ctx.app.getHttpServer())
+      .post('/enterprise/members')
+      .set('Authorization', auth(orgAdmin.token))
+      .send({
+        email: adminEmail,
+        password: 'ValidPass1!',
+        displayName: 'Team Admin',
+        role: 'admin'
+      })
+      .expect(201);
+
+    expect(createdAdmin.body.member).toMatchObject({
+      email: adminEmail,
+      role: 'admin',
+      organizationId: orgAdmin.user.organizationId
+    });
+
+    await request(ctx.app.getHttpServer())
+      .get('/enterprise/members')
+      .set('Authorization', auth(orgAdmin.token))
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.members.some((member: { email: string }) => member.email === staffEmail)).toBe(true);
+      });
+
+    await request(ctx.app.getHttpServer())
+      .delete(`/enterprise/members/${orgAdmin.user.id}`)
+      .set('Authorization', auth(orgAdmin.token))
+      .expect(403);
+
+    // Role updates: promote/demote with "last admin" guard.
+    await request(ctx.app.getHttpServer())
+      .patch(`/enterprise/members/${created.body.member.id}/role`)
+      .set('Authorization', auth(orgAdmin.token))
+      .send({ role: 'admin' })
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.member.role).toBe('admin');
+      });
+
+    await request(ctx.app.getHttpServer())
+      .patch(`/enterprise/members/${created.body.member.id}/role`)
+      .set('Authorization', auth(orgAdmin.token))
+      .send({ role: 'staff' })
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.member.role).toBe('staff');
+      });
+
+    // Demoting a non-last admin is allowed.
+    await request(ctx.app.getHttpServer())
+      .patch(`/enterprise/members/${createdAdmin.body.member.id}/role`)
+      .set('Authorization', auth(orgAdmin.token))
+      .send({ role: 'staff' })
+      .expect(200);
+
+    await request(ctx.app.getHttpServer())
+      .get('/audit/summary')
+      .set('Authorization', auth(orgAdmin.token))
+      .expect(200)
+      .expect((res) => {
+        expect(res.body.summary).toBeDefined();
+        expect(typeof res.body.summary.total).toBe('number');
+      });
+
+    await request(ctx.app.getHttpServer())
+      .get('/audit/summary')
+      .set('Authorization', auth(systemAdmin.token))
+      .expect(200);
+
+    await request(ctx.app.getHttpServer())
+      .delete('/documents')
+      .set('Authorization', auth(orgAdmin.token))
+      .expect(403);
+  });
+
+  it('proves enterprise staff cannot access review queue endpoints (admin-only)', async () => {
+    const staff = await login(ctx.app, 'staff');
+    const orgAdmin = await login(ctx.app, 'orgAdmin');
+    const suffix = Date.now().toString(36);
+
+    const upload = await request(ctx.app.getHttpServer())
+      .post('/documents')
+      .set('Authorization', auth(staff.token))
+      .attach('file', Buffer.from('%PDF-1.4\n% Balance staff test\n'), {
+        filename: `staff-${suffix}.pdf`,
+        contentType: 'application/pdf'
+      })
+      .expect(201);
+
+    const uploadedDocumentId = upload.body.document.id as string;
+    const storedDocument = await ctx.prisma.document.findUniqueOrThrow({ where: { id: uploadedDocumentId } });
+    expect(storedDocument.organizationId).toBe(staff.user.organizationId);
+
+    const claimableDocument = await createDocument(ctx.prisma, {
+      ownerId: staff.user.id,
+      organizationId: staff.user.organizationId,
+      status: 'extracted',
+      originalFilename: `staff-claim-${suffix}.pdf`,
+      merchantName: 'Staff Merchant'
+    });
+
+    const documentId = claimableDocument.id;
+
+    const claim = await request(ctx.app.getHttpServer())
+      .post('/claims')
+      .set('Authorization', auth(staff.token))
+      .send({ documentId, purpose: 'Reimbursement', note: 'Team meal' })
+      .expect(201);
+
+    const reviewId = claim.body.review.id as string;
+    const submittedAudit = await ctx.prisma.auditEvent.findFirst({
+      where: { action: 'claim.submitted', reviewId }
+    });
+    expect(submittedAudit?.actorRole).toBe('staff');
+
+    await request(ctx.app.getHttpServer())
+      .get('/reviews/queue')
+      .set('Authorization', auth(staff.token))
+      .expect(403);
+
+    await request(ctx.app.getHttpServer())
+      .get(`/reviews/${reviewId}`)
+      .set('Authorization', auth(staff.token))
+      .expect(403);
+
+    await request(ctx.app.getHttpServer())
+      .post(`/reviews/${reviewId}/approve`)
+      .set('Authorization', auth(staff.token))
+      .send({ note: 'Staff should not decide' })
+      .expect(403);
+
+    await request(ctx.app.getHttpServer())
+      .post(`/reviews/${reviewId}/claim`)
+      .set('Authorization', auth(orgAdmin.token))
+      .expect(200);
+
+    await request(ctx.app.getHttpServer())
+      .post(`/reviews/${reviewId}/approve`)
+      .set('Authorization', auth(orgAdmin.token))
+      .send({ note: 'Org admin approved' })
+      .expect(200);
+
+    const otherOrg = await request(ctx.app.getHttpServer())
+      .post('/auth/register')
+      .send({
+        email: `other-admin-${suffix}@balance.local`,
+        password: 'ValidPass1!',
+        displayName: 'Other Admin',
+        orgName: `Other Org ${suffix}`
+      })
+      .expect(201);
+
+    await request(ctx.app.getHttpServer())
+      .get(`/reviews/${reviewId}`)
+      .set('Authorization', auth(otherOrg.body.accessToken))
+      .expect(403);
+  });
+
+  it('proves enterprise recall flow (submitted -> draft -> resubmit) and org-wide admin lists', async () => {
+    const staff = await login(ctx.app, 'staff');
+    const orgAdmin = await login(ctx.app, 'orgAdmin');
+
+    const doc = await createDocument(ctx.prisma, {
+      ownerId: staff.user.id,
+      organizationId: staff.user.organizationId,
+      status: 'extracted'
+    });
+
+    const submitted = await request(ctx.app.getHttpServer())
+      .post('/claims')
+      .set('Authorization', auth(staff.token))
+      .send({ documentId: doc.id, purpose: 'Reimbursement', note: 'First pass' })
+      .expect(201);
+
+    const claimId = submitted.body.claim.id as string;
+    const reviewId = submitted.body.review.id as string;
+
+    await request(ctx.app.getHttpServer())
+      .get('/enterprise/claims')
+      .set('Authorization', auth(orgAdmin.token))
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.claims.some((c: { id: string }) => c.id === claimId)).toBe(true);
+      });
+
+    // Recall is allowed only while review is pending and unclaimed.
+    await request(ctx.app.getHttpServer())
+      .post(`/claims/${claimId}/recall`)
+      .set('Authorization', auth(staff.token))
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.claim.status).toBe('draft');
+        expect(response.body.document.id).toBe(doc.id);
+      });
+
+    const recalledAudit = await ctx.prisma.auditEvent.findFirst({
+      where: { action: 'claim.recalled', claimId }
+    });
+    expect(recalledAudit?.actorRole).toBe('staff');
+
+    const reviewAfterRecall = await ctx.prisma.review.findUnique({ where: { id: reviewId } });
+    expect(reviewAfterRecall).toBeNull();
+
+    // Resubmit updates the existing draft claim and creates a new review.
+    const resubmitted = await request(ctx.app.getHttpServer())
+      .post('/claims')
+      .set('Authorization', auth(staff.token))
+      .send({ documentId: doc.id, purpose: 'Reimbursement', note: 'Second pass' })
+      .expect(201);
+
+    expect(resubmitted.body.claim.id).toBe(claimId);
+    expect(resubmitted.body.claim.status).toBe('submitted');
+    expect(resubmitted.body.review.status).toBe('pending');
+
+    const resubmittedAudit = await ctx.prisma.auditEvent.findFirst({
+      where: { action: 'claim.resubmitted', claimId }
+    });
+    expect(resubmittedAudit?.actorRole).toBe('staff');
+
+    // Org admin can see the resubmitted claim in org-wide list.
+    await request(ctx.app.getHttpServer())
+      .get('/enterprise/claims')
+      .set('Authorization', auth(orgAdmin.token))
+      .expect(200)
+      .expect((response) => {
+        const match = response.body.claims.find((c: { id: string }) => c.id === claimId);
+        expect(match).toBeTruthy();
+        expect(match.consumer.email).toBe(staff.user.email);
+      });
+  });
+
   it('proves document upload, metadata, list, detail, queue job, and correction state rules', async () => {
     const consumer = await login(ctx.app, 'consumer');
 
@@ -98,7 +409,7 @@ describe.sequential('Balance API backend workflow', () => {
     expect(upload.body.extractionJob).toMatchObject({
       documentId: upload.body.document.id,
       status: 'queued',
-      provider: 'tesseract'
+      provider: 'textract'
     });
 
     const queuedJob = await ctx.prisma.extractionJob.findFirst({
@@ -162,6 +473,213 @@ describe.sequential('Balance API backend workflow', () => {
         })
         .expect(409);
     }
+
+    // Retry extraction: allowed pre-claim and when not queued/processing.
+    const retryable = await createDocument(ctx.prisma, {
+      ownerId: consumer.user.id,
+      status: 'failed'
+    });
+
+    await request(ctx.app.getHttpServer())
+      .post(`/documents/${retryable.id}/extraction/retry`)
+      .set('Authorization', auth(consumer.token))
+      .send({})
+      .expect(201)
+      .expect((response) => {
+        expect(response.body.document.id).toBe(retryable.id);
+        expect(response.body.document.status).toBe('queued');
+        expect(response.body.extractionJob.status).toBe('queued');
+        expect(response.body.extractionJob.provider).toBe('textract');
+      });
+
+    const updatedDoc = await ctx.prisma.document.findUniqueOrThrow({ where: { id: retryable.id } });
+    expect(updatedDoc.status).toBe('queued');
+
+    const latestJob = await ctx.prisma.extractionJob.findFirst({
+      where: { documentId: retryable.id },
+      orderBy: { createdAt: 'desc' }
+    });
+    expect(latestJob?.status).toBe('queued');
+
+    for (const status of ['queued', 'processing'] as const) {
+      const blocked = await createDocument(ctx.prisma, {
+        ownerId: consumer.user.id,
+        status
+      });
+
+      await request(ctx.app.getHttpServer())
+        .post(`/documents/${blocked.id}/extraction/retry`)
+        .set('Authorization', auth(consumer.token))
+        .send({})
+        .expect(409);
+    }
+
+    const claimedDoc = await createDocument(ctx.prisma, {
+      ownerId: consumer.user.id,
+      status: 'extracted'
+    });
+    await ctx.prisma.claim.create({
+      data: {
+        documentId: claimedDoc.id,
+        consumerId: consumer.user.id,
+        status: 'submitted',
+        purpose: 'Test purpose',
+        note: null,
+        submittedAt: new Date()
+      }
+    });
+
+    await request(ctx.app.getHttpServer())
+      .post(`/documents/${claimedDoc.id}/extraction/retry`)
+      .set('Authorization', auth(consumer.token))
+      .send({})
+      .expect(409);
+
+    const deleteTarget = await createDocument(ctx.prisma, {
+      ownerId: consumer.user.id,
+      status: 'extracted'
+    });
+
+    await ctx.prisma.auditEvent.create({
+      data: {
+        action: 'document.test_context',
+        entityType: 'document',
+        entityId: deleteTarget.id,
+        actorRole: 'system',
+        message: 'Pre-delete document audit context',
+        documentId: deleteTarget.id
+      }
+    });
+
+    await request(ctx.app.getHttpServer())
+      .delete(`/documents/${deleteTarget.id}`)
+      .set('Authorization', auth(consumer.token))
+      .expect(204);
+
+    const deletionAudit = await ctx.prisma.auditEvent.findFirstOrThrow({
+      where: { action: 'document.deleted', entityId: deleteTarget.id }
+    });
+    expect(deletionAudit.documentId).toBeNull();
+    expect(deletionAudit.metadata).toMatchObject({
+      deletedDocumentId: deleteTarget.id,
+      originalFilename: deleteTarget.originalFilename
+    });
+  });
+
+  it('proves consumer document and claim insights use the dashboard contract', async () => {
+    const consumer = await login(ctx.app, 'consumer');
+    const now = new Date();
+    const currentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-15`;
+    const previous = new Date(now.getFullYear(), now.getMonth() - 1, 15);
+    const previousDate = `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, '0')}-15`;
+
+    const currentDoc = await createDocument(ctx.prisma, {
+      ownerId: consumer.user.id,
+      status: 'extracted',
+      merchantName: 'Alpha Grocer',
+      documentDate: currentDate,
+      transactionDate: currentDate,
+      amountMinor: 5000,
+      currency: 'MYR',
+      category: 'grocery'
+    });
+
+    await ctx.prisma.documentField.createMany({
+      data: [
+        { documentId: currentDoc.id, name: 'tax', value: '3.00', source: 'ocr', confidence: 0.98 },
+        { documentId: currentDoc.id, name: 'serviceCharge', value: '2.00', source: 'ocr', confidence: 0.97 },
+        { documentId: currentDoc.id, name: 'discount', value: '1.00', source: 'ocr', confidence: 0.96 }
+      ]
+    });
+
+    await createDocument(ctx.prisma, {
+      ownerId: consumer.user.id,
+      status: 'failed',
+      merchantName: 'Alpha Grocer',
+      documentDate: currentDate,
+      transactionDate: currentDate,
+      amountMinor: 1000,
+      currency: 'MYR',
+      category: 'grocery'
+    });
+
+    await createDocument(ctx.prisma, {
+      ownerId: consumer.user.id,
+      status: 'extracted',
+      merchantName: 'Beta Cafe',
+      documentDate: previousDate,
+      transactionDate: previousDate,
+      amountMinor: 2500,
+      currency: 'MYR',
+      category: 'restaurant'
+    });
+
+    await ctx.prisma.claim.create({
+      data: {
+        documentId: currentDoc.id,
+        consumerId: consumer.user.id,
+        status: 'submitted',
+        purpose: 'Reimbursement',
+        note: null,
+        submittedAt: new Date()
+      }
+    });
+
+    await request(ctx.app.getHttpServer())
+      .get('/documents/insights')
+      .set('Authorization', auth(consumer.token))
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.insights).toMatchObject({
+          currentMonthSpendMinor: 6000,
+          previousMonthSpendMinor: 2500,
+          currentMonthDocumentCount: 2,
+          totalTaxMinor: 300,
+          totalServiceChargeMinor: 200,
+          totalDiscountMinor: 100,
+          averageReceiptMinor: 2833,
+          statusCounts: { extracted: 2, failed: 1 },
+          claimCounts: { submitted: 1 },
+          mostFrequentMerchant: { merchantName: 'Alpha Grocer', count: 2 },
+          topMerchantBySpend: { merchantName: 'Alpha Grocer', amountMinor: 6000 }
+        });
+        expect(response.body.insights.monthOverMonthChange).toBeCloseTo(140);
+        expect(response.body.insights.monthlySpend).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ month: previousDate.slice(0, 7), amountMinor: 2500, count: 1 }),
+            expect.objectContaining({ month: currentDate.slice(0, 7), amountMinor: 6000, count: 2 })
+          ])
+        );
+        expect(response.body.insights.merchantSpend[0]).toMatchObject({ merchantName: 'Alpha Grocer', amountMinor: 6000, count: 2 });
+        expect(response.body.insights.categorySpend).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ category: 'grocery', amountMinor: 6000, count: 2 }),
+            expect.objectContaining({ category: 'restaurant', amountMinor: 2500, count: 1 })
+          ])
+        );
+        expect(response.body.insights.recentDocuments).toHaveLength(3);
+        expect(response.body.insights.recentClaims[0]).toMatchObject({
+          documentId: currentDoc.id,
+          status: 'submitted',
+          amountMinor: 5000,
+          merchantName: 'Alpha Grocer',
+          currency: 'MYR'
+        });
+      });
+
+    await request(ctx.app.getHttpServer())
+      .get('/claims/insights')
+      .set('Authorization', auth(consumer.token))
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.insights).toMatchObject({
+          totalClaims: 1,
+          approvedAmountMinor: 0,
+          pendingAmountMinor: 5000,
+          rejectedAmountMinor: 0,
+          statusCounts: { draft: 0, submitted: 1, under_review: 0, approved: 0, rejected: 0 }
+        });
+      });
   });
 
   it('proves claim, review, explicit claim transition, decision, and audit behavior', async () => {
@@ -241,13 +759,13 @@ describe.sequential('Balance API backend workflow', () => {
       .post(`/reviews/${reviewId}/approve`)
       .set('Authorization', auth(reviewer.token))
       .send({ note: 'Skipping claim should fail' })
-      .expect(409);
+      .expect(403);
 
     await request(ctx.app.getHttpServer())
       .post(`/reviews/${reviewId}/reject`)
       .set('Authorization', auth(reviewer.token))
       .send({ note: 'Skipping claim should fail' })
-      .expect(409);
+      .expect(403);
 
     await request(ctx.app.getHttpServer())
       .post(`/reviews/${reviewId}/claim`)
@@ -293,7 +811,7 @@ describe.sequential('Balance API backend workflow', () => {
 
     await request(ctx.app.getHttpServer())
       .post(`/reviews/${reviewId}/approve`)
-      .set('Authorization', auth(reviewer.token))
+      .set('Authorization', auth(admin.token))
       .send({ note: 'Looks correct' })
       .expect(200)
       .expect((response) => {

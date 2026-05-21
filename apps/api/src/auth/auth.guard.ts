@@ -1,14 +1,16 @@
 import type { Request } from 'express';
 
-import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Inject, Injectable } from '@nestjs/common';
 
 import { throwContractHttpError } from '../common/contract-errors';
+import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from './jwt.service';
 
 export type AuthenticatedRequestUser = {
   id: string;
   role: string;
   email: string;
+  organizationId: string | null;
 };
 
 function bearerTokenFromHeader(value: string | undefined): string | null {
@@ -21,7 +23,10 @@ function bearerTokenFromHeader(value: string | undefined): string | null {
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(private readonly jwt: JwtService) {}
+  constructor(
+    @Inject(JwtService) private readonly jwt: JwtService,
+    @Inject(PrismaService) private readonly prisma: PrismaService
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
@@ -33,14 +38,24 @@ export class AuthGuard implements CanActivate {
 
     try {
       const payload = await this.jwt.verify(token);
-      if (!payload.sub || !payload.role || !payload.email) {
+      if (!payload.sub) {
         throw new Error('Invalid payload');
       }
 
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        select: { id: true, role: true, email: true, organizationId: true }
+      });
+
+      if (!user) {
+        throw new Error('Deleted user');
+      }
+
       (request as unknown as { user: AuthenticatedRequestUser }).user = {
-        id: payload.sub,
-        role: payload.role,
-        email: payload.email
+        id: user.id,
+        role: user.role,
+        email: user.email,
+        organizationId: user.organizationId
       };
 
       return true;
@@ -49,4 +64,3 @@ export class AuthGuard implements CanActivate {
     }
   }
 }
-

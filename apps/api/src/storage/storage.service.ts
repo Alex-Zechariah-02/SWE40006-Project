@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 
 import { throwContractHttpError } from '../common/contract-errors';
 
@@ -36,6 +37,7 @@ function extensionForContentType(contentType: string): string | null {
 
 @Injectable()
 export class StorageService {
+  private readonly logger = new Logger(StorageService.name);
   private readonly driver: StorageDriver;
   private readonly adapter: StorageDriverAdapter;
 
@@ -61,6 +63,10 @@ export class StorageService {
     return `documents/${documentId}/original.${ext}`;
   }
 
+  getDriver(): StorageDriver {
+    return this.driver;
+  }
+
   async saveUploadedDocumentFile(input: {
     documentId: string;
     contentType: string;
@@ -74,10 +80,42 @@ export class StorageService {
         body: input.body,
         contentType: input.contentType
       });
-    } catch {
+    } catch (err) {
+      this.logger.error(
+        `Storage putObject failed (driver=${this.driver}, key=${storageKey})`,
+        err instanceof Error ? err.stack : undefined
+      );
       throwContractHttpError(503, 'SERVICE_UNAVAILABLE', 'Storage unavailable', []);
     }
 
     return { storageKey };
+  }
+
+  async getDocumentFile(input: { storageKey: string; expectedContentType: string }): Promise<{ body: Buffer; contentType: string }> {
+    try {
+      const result = await this.adapter.getObject(input.storageKey);
+      return {
+        body: result.body,
+        contentType: result.contentType || input.expectedContentType
+      };
+    } catch (err) {
+      this.logger.error(
+        `Storage getObject failed (driver=${this.driver}, key=${input.storageKey})`,
+        err instanceof Error ? err.stack : undefined
+      );
+      throwContractHttpError(404, 'NOT_FOUND', 'Document file not found', []);
+    }
+  }
+
+  async deleteDocumentFile(storageKey: string): Promise<void> {
+    try {
+      await this.adapter.deleteObject(storageKey);
+    } catch (err) {
+      // Storage cleanup is best-effort. Log and continue.
+      this.logger.warn(
+        `Failed to delete storage object (driver=${this.driver}, key=${storageKey})`,
+        err instanceof Error ? err.stack : undefined
+      );
+    }
   }
 }

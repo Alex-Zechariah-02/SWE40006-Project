@@ -1,12 +1,45 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { RoutePlaceholderShell } from '../components/route-placeholder-shell';
+import HomePage from './page';
+
+// Mock client-only dependencies so HomePage can render in a server context.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+}));
+
+vi.mock('@/context/auth-context', () => ({
+  useAuth: () => ({ user: null, loading: true }),
+}));
+
+vi.mock('@/components/theme-toggle', () => ({
+  ThemeToggle: () => null,
+}));
 
 const originalEnv = { ...process.env };
 
 afterEach(() => {
   process.env = { ...originalEnv };
+});
+
+describe('HomePage (live landing page)', () => {
+  it('renders the landing page header and hero content', () => {
+    const html = renderToStaticMarkup(<HomePage />);
+
+    expect(html).toContain('Balance');
+    expect(html).toContain('Balance workspace');
+    expect(html).toContain('Textract-first');
+    expect(html).toContain('Organize receipts');
+    expect(html).toContain('Enter workspace');
+    expect(html).toContain('Reviewer access');
+    expect(html).toContain('Sign in');
+    // Feature cards
+    expect(html).toContain('Inbox');
+    expect(html).toContain('Extract');
+    expect(html).toContain('Review');
+    expect(html).toContain('Audit');
+  });
 });
 
 describe('RoutePlaceholderShell', () => {
@@ -15,6 +48,10 @@ describe('RoutePlaceholderShell', () => {
     process.env.API_PROXY_TARGET = 'http://api:3001';
     process.env.NEXT_PUBLIC_API_HEALTH_PATH = '/gateway/health';
     process.env.NEXT_PUBLIC_API_VERSION_PATH = '/gateway/version';
+    process.env.STORAGE_DRIVER = 's3';
+    process.env.S3_BUCKET = 'ci-placeholder-only';
+    process.env.S3_REGION = 'ap-southeast-5';
+    process.env.AWS_REGION = 'ap-southeast-5';
 
     const html = renderToStaticMarkup(
       <RoutePlaceholderShell
@@ -25,9 +62,10 @@ describe('RoutePlaceholderShell', () => {
     );
 
     expect(html).toContain('Balance');
-    expect(html).toContain('Document workflow platform');
+    expect(html).toContain('structured workspace');
     expect(html).toContain('STAGING');
-    expect(html).toContain('Current Route');
+    expect(html).toContain('Route');
+    expect(html).toContain('role gateway');
     expect(html).toContain('/login');
     expect(html).toContain('/app');
     expect(html).toContain('/gateway/health');
@@ -37,6 +75,10 @@ describe('RoutePlaceholderShell', () => {
 
   it('renders the login placeholder route', () => {
     process.env.APP_ENV = 'production';
+    process.env.STORAGE_DRIVER = 's3';
+    process.env.S3_BUCKET = 'ci-placeholder-only';
+    process.env.S3_REGION = 'ap-southeast-5';
+    process.env.AWS_REGION = 'ap-southeast-5';
 
     const html = renderToStaticMarkup(
       <RoutePlaceholderShell

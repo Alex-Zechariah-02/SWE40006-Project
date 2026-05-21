@@ -103,13 +103,15 @@ async function main() {
     where: { email: adminEmail },
     update: {
       displayName: 'Demo Admin',
-      role: Role.admin,
+      role: Role.system_admin,
+      organizationId: null,
       passwordHash: adminHash
     },
     create: {
       email: adminEmail,
       displayName: 'Demo Admin',
-      role: Role.admin,
+      role: Role.system_admin,
+      organizationId: null,
       passwordHash: adminHash
     }
   });

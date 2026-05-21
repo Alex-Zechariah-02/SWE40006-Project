@@ -10,10 +10,19 @@ import { claimReview, approveReview, rejectReview, getReviewDetail } from '../..
 import type { ReviewDetail } from '../../../../lib/api/reviews';
 import { BalanceApiError } from '../../../../lib/api/client';
 import { useAuth } from '../../../../context/auth-context';
+import { canDecideReview } from '../../../../lib/role-permissions';
+import { DocumentPreview } from '@/components/document/document-preview';
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
+import { formatDateTime, formatMoney } from '@/lib/format';
+import { PageTransition } from '@/components/workspace/page-transition';
 
 export default function ReviewDetailPage() {
   return (
-    <RouteGuard allowedRoles={['reviewer', 'admin']}>
+    <RouteGuard allowedRoles={['reviewer', 'admin', 'system_admin']}>
       <EnterpriseLayout>
         <ReviewDetailContent />
       </EnterpriseLayout>
@@ -99,178 +108,186 @@ function ReviewDetailContent() {
     }
   }
 
-  if (loading) return <p className="text-sm text-slate-400">Loading review…</p>;
+  if (loading) return <p className="text-sm text-muted-foreground">Loading review…</p>;
   if (error) return (
     <div className="flex flex-col gap-4">
-      <p role="alert" className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-300">{error}</p>
-      <Link href="/enterprise/reviews" className="text-sm text-slate-400 hover:text-slate-200">← Back to queue</Link>
+      <Alert role="alert" variant="destructive">{error}</Alert>
+      <Link href="/enterprise/reviews" className="text-sm text-muted-foreground hover:text-foreground">Back to queue</Link>
     </div>
   );
   if (!review) return null;
 
-  const isAssignedToMe = review.reviewerId === user?.id || user?.role === 'admin';
+  const isAssignedToMe = review.reviewerId === user?.id;
+  const canDecideRole = user?.role === 'admin' || user?.role === 'system_admin';
   const canClaim = review.status === 'pending';
-  const canDecide = review.status === 'in_review' && isAssignedToMe;
+  const canDecide = canDecideReview(user?.role, review.status);
   const isFinal = review.status === 'approved' || review.status === 'rejected';
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageTransition>
+    <div className="grid gap-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <Link href="/enterprise/reviews" className="text-xs text-slate-500 hover:text-slate-300 mb-2 inline-block">← Review queue</Link>
-          <h1 className="text-xl font-semibold tracking-tight">{review.document.originalFilename}</h1>
-          <p className="mt-1 text-xs text-slate-500">Claim: {review.claim.purpose}</p>
+          <Link href="/enterprise/reviews" className="mb-2 inline-block text-xs text-muted-foreground hover:text-foreground">Review queue</Link>
+          <h1 className="text-2xl font-semibold tracking-tight">{review.document.originalFilename}</h1>
+          <p className="mt-1 text-xs text-muted-foreground">Claim: {review.claim.purpose}</p>
         </div>
         <StatusBadge status={review.status} />
       </div>
 
+      <div className="grid gap-5 xl:grid-cols-[minmax(360px,0.9fr)_minmax(520px,1.1fr)]">
+        <DocumentPreview documentId={review.document.id} filename={review.document.originalFilename} />
+        <div className="grid content-start gap-5">
       {/* Document info */}
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-5 flex flex-col gap-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Document</p>
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div><p className="text-xs text-slate-500">Merchant</p><p className="text-slate-100">{review.document.merchantName ?? '—'}</p></div>
-          <div><p className="text-xs text-slate-500">Amount</p><p className="text-slate-100">{review.document.amountMinor != null ? `${(review.document.amountMinor / 100).toFixed(2)} ${review.document.currency ?? ''}` : '—'}</p></div>
-          <div><p className="text-xs text-slate-500">Date</p><p className="text-slate-100">{review.document.documentDate ?? '—'}</p></div>
-          <div><p className="text-xs text-slate-500">Document status</p><StatusBadge status={review.document.status} /></div>
-        </div>
-      </div>
+      <Card>
+        <CardHeader><CardTitle>Evidence summary</CardTitle></CardHeader>
+        <CardContent className="grid grid-cols-2 gap-3 text-sm">
+          <div><p className="text-xs text-muted-foreground">Merchant</p><p>{review.document.merchantName ?? 'Not captured'}</p></div>
+          <div><p className="text-xs text-muted-foreground">Amount</p><p className="font-mono tabular-nums">{formatMoney(review.document.amountMinor, review.document.currency ?? 'MYR')}</p></div>
+          <div><p className="text-xs text-muted-foreground">Date</p><p className="font-mono text-xs tabular-nums">{review.document.documentDate ?? 'Not captured'}</p></div>
+          <div><p className="text-xs text-muted-foreground">Document status</p><StatusBadge status={review.document.status} /></div>
+          {review.reviewerId && review.status === 'in_review' && (
+            <div className="col-span-2">
+              <p className="text-xs font-medium text-muted-foreground">Assigned to</p>
+              <p className="text-sm">Reviewer</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      {/* Extracted fields */}
-      {review.document.fields.length > 0 && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">Extracted fields</p>
-          <div className="flex flex-col gap-2">
-            {review.document.fields.map((field) => (
-              <div key={field.id} className="flex items-center gap-4 text-sm">
-                <span className="text-slate-400 w-32 shrink-0">{field.label}</span>
-                <span className="text-slate-100">
-                  {field.correctedValue ?? field.value}
-                  {field.correctedValue && (
-                    <span className="ml-2 text-xs text-slate-500 line-through">{field.value}</span>
-                  )}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <Alert variant={review.document.fields.some((field) => field.confidence != null && field.confidence < 70) ? 'warning' : 'success'}>
+        {review.document.fields.some((field) => field.confidence != null && field.confidence < 70)
+          ? 'Low-confidence extracted fields require reviewer attention before a decision.'
+          : 'Extraction confidence is acceptable for reviewer verification.'}
+      </Alert>
 
-      {/* Claim info */}
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-5 flex flex-col gap-2">
-        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Claim</p>
-        <p className="text-sm text-slate-100">{review.claim.purpose}</p>
-        {review.claim.note && <p className="text-sm text-slate-400">{review.claim.note}</p>}
-        <p className="text-xs text-slate-600">Submitted {new Date(review.claim.submittedAt).toLocaleString()}</p>
-        <StatusBadge status={review.claim.status} />
-      </div>
+      <Card>
+        <CardHeader><CardTitle>Reviewer checklist</CardTitle></CardHeader>
+        <CardContent className="grid gap-2 sm:grid-cols-2">
+          {['Merchant matches proof', 'Date is captured', 'Total reconciles', 'Payment proof visible', 'Claim purpose matches policy', 'Line items look plausible'].map((item) => (
+            <div key={item} className="flex items-center gap-2 rounded-md border border-border bg-background/60 px-3 py-2 text-sm">
+              <span className="size-2 rounded-full bg-primary" />
+              {item}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
-      {/* Audit timeline */}
-      {review.auditEvents.length > 0 && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">Audit timeline</p>
-          <div className="flex flex-col gap-2">
-            {review.auditEvents.map((event) => (
-              <div key={event.id} className="flex items-start gap-3 text-xs">
-                <span className="text-slate-600 w-36 shrink-0">{new Date(event.createdAt).toLocaleString()}</span>
-                <span className="text-slate-400">{event.message}</span>
-                <span className="text-slate-600 ml-auto">{event.actorRole}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <Card>
+        <CardHeader><CardTitle>Claim</CardTitle></CardHeader>
+        <CardContent className="grid gap-2">
+          <p className="text-sm font-medium">{review.claim.purpose}</p>
+          {review.claim.note && <p className="text-sm text-muted-foreground">{review.claim.note}</p>}
+          <p className="font-mono text-xs text-muted-foreground tabular-nums">Submitted {formatDateTime(review.claim.submittedAt)}</p>
+          <StatusBadge status={review.claim.status} />
+        </CardContent>
+      </Card>
 
       {/* Decision controls */}
       {!isFinal && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5 flex flex-col gap-4">
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Actions</p>
+        <Card>
+          <CardHeader><CardTitle>Decision</CardTitle></CardHeader>
+          <CardContent className="grid gap-4">
+            {actionError && <Alert role="alert" variant="destructive">{actionError}</Alert>}
 
-          {actionError && (
-            <p role="alert" className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-2.5 text-sm text-red-300">
-              {actionError}
-            </p>
-          )}
+            {canClaim && (
+              <Button onClick={handleClaim} disabled={claiming} className="w-fit">
+                {claiming ? 'Claiming…' : 'Claim and start review'}
+              </Button>
+            )}
 
-          {canClaim && (
-            <button
-              onClick={handleClaim}
-              disabled={claiming}
-              className="w-fit rounded-xl border border-sky-400/30 bg-sky-400/10 px-4 py-2 text-sm font-medium text-sky-200 hover:bg-sky-400/20 transition disabled:opacity-50"
-            >
-              {claiming ? 'Claiming…' : 'Start review'}
-            </button>
-          )}
+            {canDecide && !showRejectForm && (
+              <div className="flex gap-3">
+                <Button onClick={handleApprove} disabled={approving || rejecting}>
+                  {approving ? 'Approving…' : 'Approve'}
+                </Button>
+                <Button variant="destructive" onClick={() => setShowRejectForm(true)} disabled={approving || rejecting}>
+                  Reject
+                </Button>
+              </div>
+            )}
 
-          {canDecide && !showRejectForm && (
-            <div className="flex gap-3">
-              <button
-                onClick={handleApprove}
-                disabled={approving || rejecting}
-                className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm font-medium text-emerald-200 hover:bg-emerald-400/20 transition disabled:opacity-50"
-              >
-                {approving ? 'Approving…' : 'Approve'}
-              </button>
-              <button
-                onClick={() => setShowRejectForm(true)}
-                disabled={approving || rejecting}
-                className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-2 text-sm font-medium text-red-200 hover:bg-red-400/20 transition disabled:opacity-50"
-              >
-                Reject
-              </button>
-            </div>
-          )}
-
-          {canDecide && showRejectForm && (
-            <form onSubmit={handleReject} className="flex flex-col gap-3 max-w-lg">
-              <div>
-                <label htmlFor="reject-note" className="block text-xs font-medium text-slate-400 mb-1">
-                  Rejection reason <span className="text-red-400">*</span>
-                </label>
-                <textarea
+            {canDecide && showRejectForm && (
+              <form onSubmit={handleReject} className="grid max-w-lg gap-3">
+                <Textarea
                   id="reject-note"
                   value={rejectNote}
                   onChange={(e) => setRejectNote(e.target.value)}
                   disabled={rejecting}
                   rows={3}
-                  placeholder="Explain the reason for rejection…"
-                  className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-red-400/50 focus:outline-none disabled:opacity-50 resize-none"
+                  placeholder="Rejection reason"
                 />
-              </div>
-              <div className="flex gap-3">
-                <button
-                  type="submit"
-                  disabled={rejecting}
-                  className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-2 text-sm font-medium text-red-200 hover:bg-red-400/20 transition disabled:opacity-50"
-                >
-                  {rejecting ? 'Rejecting…' : 'Confirm rejection'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setShowRejectForm(false); setRejectNote(''); setActionError(null); }}
-                  disabled={rejecting}
-                  className="rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          )}
+                <div className="flex gap-3">
+                  <Button type="submit" variant="destructive" disabled={rejecting}>
+                    {rejecting ? 'Rejecting…' : 'Confirm rejection'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => { setShowRejectForm(false); setRejectNote(''); setActionError(null); }}
+                    disabled={rejecting}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            )}
 
-          {review.status === 'in_review' && !isAssignedToMe && (
-            <p className="text-sm text-slate-400">This review is assigned to another reviewer.</p>
-          )}
-        </div>
+            {review.status === 'in_review' && !isAssignedToMe && !canDecideRole && (
+              <p className="text-sm text-muted-foreground">This review is assigned to another reviewer.</p>
+            )}
+          </CardContent>
+        </Card>
       )}
 
-      {/* Final state */}
       {isFinal && (
-        <div className={`rounded-2xl border p-5 ${review.status === 'approved' ? 'border-emerald-400/20 bg-emerald-400/5' : 'border-red-400/20 bg-red-400/5'}`}>
-          <p className={`text-sm font-medium ${review.status === 'approved' ? 'text-emerald-300' : 'text-red-300'}`}>
-            Review {review.status}
-          </p>
-          {review.decisionNote && <p className="mt-1 text-sm text-slate-300">{review.decisionNote}</p>}
+        <Alert variant={review.status === 'approved' ? 'success' : 'destructive'}>
+          Review {review.status}. {review.decisionNote ?? ''}
+        </Alert>
+      )}
+
         </div>
+      </div>
+
+      {/* Extracted fields */}
+      {review.document.fields.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Extracted fields</CardTitle></CardHeader>
+          <CardContent>
+          <div className="grid gap-2 md:grid-cols-2">
+            {review.document.fields.map((field) => (
+              <div key={field.id} className="grid gap-1 rounded-md border border-border bg-background/60 p-3 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">{field.label}</span>
+                  {field.confidence != null && <Badge variant={field.confidence >= 90 ? 'success' : field.confidence >= 70 ? 'warning' : 'danger'}>{field.confidence.toFixed(0)}%</Badge>}
+                </div>
+                <span className="font-medium">
+                  {field.correctedValue ?? field.value}
+                  {field.correctedValue && <span className="ml-2 text-xs text-muted-foreground line-through">{field.value}</span>}
+                </span>
+              </div>
+            ))}
+          </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Audit timeline */}
+      {review.auditEvents.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Audit timeline</CardTitle></CardHeader>
+          <CardContent className="grid gap-2">
+            {review.auditEvents.map((event) => (
+              <div key={event.id} className="grid gap-2 rounded-md border border-border bg-background/60 px-3 py-2 text-xs md:grid-cols-[10rem_1fr_auto]">
+                <span className="font-mono text-muted-foreground tabular-nums">{formatDateTime(event.createdAt)}</span>
+                <span>{event.message}</span>
+                <span className="text-muted-foreground">{event.actorRole}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       )}
     </div>
+    </PageTransition>
   );
 }

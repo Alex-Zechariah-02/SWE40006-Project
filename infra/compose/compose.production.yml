@@ -42,11 +42,10 @@ services:
       QUEUE_PROOF_NAME: ${QUEUE_PROOF_NAME:-queue_proof}
       EXTRACTION_QUEUE_NAME: ${EXTRACTION_QUEUE_NAME:-document_extract}
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
+      STORAGE_DRIVER: s3
       S3_BUCKET: ${S3_BUCKET:?S3_BUCKET is required}
-      S3_REGION: ${S3_REGION:-${AWS_REGION:?AWS_REGION is required}}
-      OCR_PROVIDER: ${OCR_PROVIDER:-tesseract}
-      TESSERACT_LANG: ${TESSERACT_LANG:-eng}
+      S3_REGION: ${S3_REGION:?S3_REGION is required}
+      OCR_PROVIDER: textract
       AWS_REGION: ${AWS_REGION:?AWS_REGION is required}
     depends_on:
       redis:
@@ -81,11 +80,11 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       QUEUE_PROOF_NAME: ${QUEUE_PROOF_NAME:-queue_proof}
       EXTRACTION_QUEUE_NAME: ${EXTRACTION_QUEUE_NAME:-document_extract}
-      OCR_PROVIDER: ${OCR_PROVIDER:-tesseract}
-      TESSERACT_LANG: ${TESSERACT_LANG:-eng}
-      STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
+      OCR_PROVIDER: textract
+      EXTRACTION_PROVIDER_DEFAULT: textract
+      STORAGE_DRIVER: s3
       S3_BUCKET: ${S3_BUCKET:?S3_BUCKET is required}
-      S3_REGION: ${S3_REGION:-${AWS_REGION:?AWS_REGION is required}}
+      S3_REGION: ${S3_REGION:?S3_REGION is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
       PASSWORD_PEPPER: ${PASSWORD_PEPPER:?PASSWORD_PEPPER is required}

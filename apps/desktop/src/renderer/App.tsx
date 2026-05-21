@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { clearToken, getToken, DesktopApiError } from './lib/api/client';
 import { desktopLogin, desktopGetCurrentUser, desktopLogout } from './lib/api/auth';
 import type { DesktopUser } from './lib/api/auth';
@@ -34,57 +34,28 @@ const s = {
   },
 };
 
-export function App() {
-  const [screen, setScreen] = useState<Screen>('login');
-  const [user, setUser] = useState<DesktopUser | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-
-  // Restore session on startup
-  useEffect(() => {
-    const token = getToken();
-    if (!token) { setAuthLoading(false); return; }
-    desktopGetCurrentUser()
-      .then((u) => {
-        if (u.role === 'consumer') { clearToken(); setAuthLoading(false); return; }
-        setUser(u);
-        setScreen('queue');
-        setAuthLoading(false);
-      })
-      .catch(() => { clearToken(); setAuthLoading(false); });
-  }, []);
-
-  function handleLoginSuccess(u: DesktopUser) {
-    setUser(u);
-    setScreen('queue');
-  }
-
-  async function handleLogout() {
-    await desktopLogout();
-    setUser(null);
-    setScreen('login');
-  }
-
-  if (authLoading) {
-    return <div style={{ ...parseStyle(s.bg), display:'flex', alignItems:'center', justifyContent:'center' }}>
-      <p style={{ color:'#64748b', fontSize:13 }}>Loading…</p>
-    </div>;
-  }
+function DesktopRuntimeBanner() {
+  const runtime = typeof window !== 'undefined' ? window.balanceDesktop?.runtime : undefined;
 
   return (
-    <div style={parseStyle(s.bg)}>
-      {screen === 'login' && <LoginScreen onSuccess={handleLoginSuccess} />}
-      {screen === 'queue' && user && (
-        <QueueScreen
-          user={user}
-          onLogout={handleLogout}
-          onSelectReview={(id) => setScreen('detail')}
-          selectedId={null}
-          onNavigateDetail={(id) => { setSelectedId(id); setScreen('detail'); }}
-        />
-      )}
-      {screen === 'detail' && user && (
-        <DetailWrapper user={user} onLogout={handleLogout} onBack={() => setScreen('queue')} />
-      )}
+    <div style={{ padding: '18px 24px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16 }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 650, letterSpacing: '-0.01em' }}>
+            {runtime?.appName ?? 'Balance'} Desktop Workspace
+          </div>
+          <div style={{ marginTop: 2, fontSize: 11, letterSpacing: '0.22em', color: '#64748b' }}>
+            DOCUMENT WORKFLOW PLATFORM
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8' }}>Environment</span>
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', color: '#e2e8f0' }}>
+            {runtime?.environmentLabel ?? runtime?.environment?.toUpperCase?.() ?? 'LOCAL'}
+          </span>
+        </div>
+      </div>
+      <div style={{ marginTop: 14, height: 1, background: 'rgba(148,163,184,0.12)' }} />
     </div>
   );
 }
@@ -117,13 +88,19 @@ function AppWithState() {
   }
 
   if (authLoading) {
-    return <div style={{ background:'#0f172a', minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center' }}>
-      <p style={{ color:'#64748b', fontSize:13 }}>Loading…</p>
-    </div>;
+    return (
+      <div style={{ background: '#0f172a', minHeight: '100vh' }}>
+        <DesktopRuntimeBanner />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 24px' }}>
+          <p style={{ color: '#64748b', fontSize: 13 }}>Loading…</p>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div style={{ background:'#0f172a', minHeight:'100vh', color:'#e2e8f0', fontFamily:'system-ui,sans-serif' }}>
+      <DesktopRuntimeBanner />
       {screen === 'login' && (
         <LoginScreen onSuccess={(u) => { setUser(u); setScreen('queue'); }} />
       )}
@@ -137,7 +114,7 @@ function AppWithState() {
       {screen === 'detail' && user && selectedReviewId && (
         <ReviewDetailScreen
           reviewId={selectedReviewId}
-          user={user}
+          _user={user}
           onBack={() => setScreen('queue')}
           onLogout={handleLogout}
         />
@@ -147,7 +124,7 @@ function AppWithState() {
 }
 
 // Re-export AppWithState as the real App
-export { AppWithState as default };
+export { AppWithState as default, AppWithState as App };
 
 // ── Login Screen ──────────────────────────────────────────────────────────────
 
@@ -275,9 +252,9 @@ function QueueScreen({ user, onLogout, onSelectReview }: {
 
 // ── Review Detail Screen ──────────────────────────────────────────────────────
 
-function ReviewDetailScreen({ reviewId, user, onBack, onLogout }: {
+function ReviewDetailScreen({ reviewId, _user: _user, onBack, onLogout }: {
   reviewId: string;
-  user: DesktopUser;
+  _user: DesktopUser;
   onBack: () => void;
   onLogout: () => void;
 }) {

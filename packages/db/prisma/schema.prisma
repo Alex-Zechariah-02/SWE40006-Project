@@ -11,7 +11,9 @@ datasource db {
 enum Role {
   consumer
   reviewer
+  staff
   admin
+  system_admin
 }
 
 enum DocumentStatus {
@@ -25,6 +27,11 @@ enum DocumentStatus {
   reviewed
   rejected
   failed
+}
+
+enum StorageDriver {
+  filesystem
+  s3
 }
 
 enum ExtractionJobStatus {
@@ -41,6 +48,7 @@ enum ExtractionProvider {
 }
 
 enum ClaimStatus {
+  draft
   submitted
   under_review
   approved
@@ -55,10 +63,99 @@ enum ReviewStatus {
 }
 
 enum FieldName {
+  // Existing (retained for backward compatibility)
   merchantName
   documentDate
   amountMinor
   currency
+
+  // Vendor
+  vendorAddress
+  vendorPhone
+  vendorTaxId
+  merchantLegalName
+  merchantUrl
+  invoiceReceiptId
+  receiptId
+  invoiceId
+  orderId
+
+  // Receiver
+  receiverName
+  receiverAddress
+  customerName
+  customerAddress
+  customerEmail
+  customerPhone
+  customerTaxId
+
+  // Dates
+  dueDate
+  orderDate
+  invoiceDate
+  deliveryDate
+  transactionTime
+
+  // Financial
+  total
+  subtotal
+  tax
+  taxRate
+  taxableAmount
+  amountDue
+  amountPaid
+  discount
+  voucher
+  shippingCharge
+  serviceCharge
+  gratuity
+  roundingAdjustment
+  paymentType
+  paymentCardLast4
+  paymentReference
+  paymentTerms
+  poNumber
+
+  // Receipt context
+  cashierName
+  serverName
+  tableNumber
+  coverCount
+
+  // Invoice supplier/remittance
+  supplierName
+  supplierEmail
+  supplierPhone
+  supplierWebsite
+  supplierTaxId
+  supplierRegistration
+  remittanceAddress
+  bankAccount
+
+  // Address components
+  vendorStreet
+  vendorCity
+  vendorState
+  vendorCountry
+  vendorPostalCode
+  receiverStreet
+  receiverCity
+  receiverState
+  receiverCountry
+  receiverPostalCode
+
+  // Line items
+  lineItemDescription
+  lineItemQuantity
+  lineItemUnit
+  lineItemUnitPrice
+  lineItemTotalPrice
+  lineItemProductCode
+  lineItemTax
+  lineItemTaxRate
+  lineItemDiscount
+  lineItemCategory
+  lineItemTransactionDate
 }
 
 enum FieldSource {
@@ -80,20 +177,27 @@ model User {
   passwordHash String
   displayName  String
   role         Role
+  organizationId String? @db.Uuid
 
   documents  Document[]   @relation("UserDocuments")
   claims     Claim[]      @relation("UserClaims")
   reviews    Review[]     @relation("UserReviews")
   auditEvents AuditEvent[] @relation("UserAuditEvents")
+  organization Organization? @relation("OrgMembers", fields: [organizationId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
 }
 
 model Organization {
   id        String     @id @default(uuid()) @db.Uuid
   name      String     @unique
-  documents Document[]
+  documents  Document[]
+  claims     Claim[]
+  members    User[]        @relation("OrgMembers")
+  auditEvents AuditEvent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -106,10 +210,24 @@ model Document {
   originalFilename String
   contentType    String
   sizeBytes      Int
+  storageDriver  StorageDriver @default(filesystem)
   storageKey     String
   status         DocumentStatus
   label          String?
   notes          String?
+  documentType   String?
+  category       String?
+  claimIntent    String?
+  tags           Json          @default("[]")
+  qualityScore   Int?
+  qualityWarnings Json         @default("[]")
+  duplicateFingerprint String?
+  duplicateOfId  String?       @db.Uuid
+  transactionDate String?
+  transactionTime String?
+  retentionUntil DateTime?
+  previewAvailable Boolean     @default(true)
+  extractionSummary Json       @default("{}")
 
   merchantName String?
   documentDate String?
@@ -131,6 +249,12 @@ model Document {
   @@index([ownerId])
   @@index([status])
   @@index([organizationId])
+  @@index([category])
+  @@index([claimIntent])
+  @@index([documentType])
+  @@index([duplicateFingerprint])
+  @@index([duplicateOfId])
+  @@index([transactionDate])
 }
 
 model DocumentField {
@@ -141,14 +265,27 @@ model DocumentField {
   correctedValue String?
   confidence    Float?
   source        FieldSource
+  groupKey      String?    // NEW: groups line item fields together (e.g., "li-0", "li-1")
+  rawType       String?
+  rawLabel      String?
+  normalizedValue String?
+  valueType     String?
+  pageNumber    Int?
+  geometry      Json?
+  validationStatus String?
+  reviewState   String?
+  metadata      Json       @default("{}")
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([documentId, name])
+  @@unique([documentId, name, groupKey])  // Changed from @@unique([documentId, name])
   @@index([documentId])
+  @@index([name])
+  @@index([validationStatus])
+  @@index([reviewState])
 }
 
 model ExtractionJob {
@@ -164,20 +301,34 @@ model ExtractionJob {
 
   document   Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
   auditEvents AuditEvent[]
+  artifact   ExtractionArtifact?
 
   @@index([documentId])
   @@index([status])
+}
+
+model ExtractionArtifact {
+  id              String             @id @default(uuid()) @db.Uuid
+  extractionJobId String             @unique @db.Uuid
+  provider        ExtractionProvider
+  rawResponse     Json               @default("{}")
+  normalized      Json               @default("{}")
+  warnings        Json               @default("[]")
+  createdAt       DateTime           @default(now())
+
+  extractionJob ExtractionJob @relation(fields: [extractionJobId], references: [id], onDelete: Cascade)
 }
 
 model Claim {
   id         String      @id @default(uuid()) @db.Uuid
   documentId String      @unique @db.Uuid
   consumerId String      @db.Uuid
+  organizationId String? @db.Uuid
   status     ClaimStatus
   purpose    String
   note       String?
 
-  submittedAt DateTime
+  submittedAt DateTime?
   decidedAt   DateTime?
 
   createdAt DateTime @default(now())
@@ -185,10 +336,12 @@ model Claim {
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Restrict)
   consumer User     @relation("UserClaims", fields: [consumerId], references: [id], onDelete: Restrict)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   review   Review?
   auditEvents AuditEvent[]
 
   @@index([consumerId])
+  @@index([organizationId])
   @@index([status])
 }
 
@@ -223,6 +376,7 @@ model AuditEvent {
   actorRole  String
   message    String
   metadata   Json      @default("{}")
+  organizationId String? @db.Uuid
 
   createdAt DateTime @default(now())
 
@@ -232,10 +386,11 @@ model AuditEvent {
   reviewId     String?      @db.Uuid
 
   actor        User?        @relation("UserAuditEvents", fields: [actorId], references: [id], onDelete: SetNull)
-  document     Document?    @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  extractionJob ExtractionJob? @relation(fields: [extractionJobId], references: [id], onDelete: Cascade)
-  claim        Claim?       @relation(fields: [claimId], references: [id], onDelete: Cascade)
-  review       Review?      @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  document     Document?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  extractionJob ExtractionJob? @relation(fields: [extractionJobId], references: [id], onDelete: SetNull)
+  claim        Claim?       @relation(fields: [claimId], references: [id], onDelete: SetNull)
+  review       Review?      @relation(fields: [reviewId], references: [id], onDelete: SetNull)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
 
   @@index([entityType, entityId])
   @@index([actorId])
@@ -244,4 +399,5 @@ model AuditEvent {
   @@index([extractionJobId])
   @@index([claimId])
   @@index([reviewId])
+  @@index([organizationId])
 }

@@ -8,7 +8,8 @@
       "@balance/types": ["packages/types/src/index.ts"],
       "@balance/utils": ["packages/utils/src/index.ts"],
       "@balance/config": ["packages/config/src/index.ts"],
-      "@balance/ui": ["packages/ui/src/index.ts"]
+      "@balance/ui": ["packages/ui/src/index.ts"],
+      "@/*": ["apps/web/src/*"]
     },
     "plugins": [{ "name": "next" }],
     "types": ["vitest/globals"]

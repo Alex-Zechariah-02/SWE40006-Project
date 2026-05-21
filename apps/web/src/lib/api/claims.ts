@@ -9,23 +9,48 @@ export interface Claim {
   status: ClaimStatus;
   purpose: string;
   note: string | null;
-  submittedAt: string;
+  submittedAt: string | null;
   decidedAt: string | null;
   createdAt?: string;
   updatedAt?: string;
+  consumer?: {
+    id: string;
+    displayName: string;
+    email: string;
+  };
   document?: {
     id: string;
     originalFilename: string;
+    contentType?: string;
     merchantName: string | null;
+    documentDate?: string | null;
     amountMinor: number | null;
     currency: string | null;
     status: string;
+    fields?: Array<{
+      id: string;
+      name: string;
+      value: string;
+      correctedValue: string | null;
+      confidence: number | null;
+      source: string;
+    }>;
   };
   review?: {
     id: string;
     status: string;
+    reviewerId?: string | null;
     decisionNote: string | null;
+    decidedAt?: string | null;
   } | null;
+  auditEvents?: Array<{
+    id: string;
+    action: string;
+    entityType: string;
+    actorRole: string;
+    message: string;
+    createdAt: string;
+  }>;
 }
 
 export interface Review {
@@ -65,4 +90,21 @@ export async function listClaims(params?: {
 
 export async function getClaim(id: string): Promise<{ claim: Claim }> {
   return apiRequest(`/claims/${id}`);
+}
+
+export async function recallClaim(id: string): Promise<{ claim: { id: string; status: ClaimStatus; updatedAt: string }; document: { id: string; status: string } }> {
+  return apiRequest(`/claims/${id}/recall`, { method: 'POST' });
+}
+
+export interface ClaimInsights {
+  totalClaims: number;
+  statusCounts: Record<string, number>;
+  approvedAmountMinor: number;
+  pendingAmountMinor: number;
+  rejectedAmountMinor: number;
+  recentClaims: Claim[];
+}
+
+export async function getClaimInsights(): Promise<{ insights: ClaimInsights }> {
+  return apiRequest('/claims/insights');
 }

@@ -1,8 +1,10 @@
 import Link from 'next/link';
 import { loadAppConfig } from '@balance/config';
-import { AppShell, StatusCard } from '@balance/ui';
 
 import { ApiStatusPanel } from './api-status-panel';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 
 interface RoutePlaceholderShellProps {
   routePath: '/' | '/login' | '/app';
@@ -20,57 +22,67 @@ export function RoutePlaceholderShell({ routePath, routeTitle, routeSummary }: R
   const config = loadAppConfig();
 
   return (
-    <AppShell
-      appName={config.appName}
-      subtitle="Document workflow platform"
-      environment={config.appEnv}
-      description="Balance converts transaction documents into structured records for personal management and enterprise workflow."
-    >
-      <StatusCard
-        title="Release"
-        value={config.appVersion}
-        detail={`Version ${config.appVersion} | Commit ${config.gitCommit} | Build ${config.buildId}`}
-      />
-      <StatusCard title="Current Route" value={routePath} detail={`${routeTitle}. ${routeSummary}`} />
-      <StatusCard
-        title="Runtime"
-        value={config.appName}
-        detail={`Environment: ${config.appEnv.toUpperCase()}`}
-      />
-      <StatusCard
-        title="API Access"
-        value={`${config.apiBasePath}/*`}
-        detail="Health and version checks stay available through the Balance web app while API traffic is forwarded internally."
-      />
-      <article className="rounded-2xl border border-white/10 bg-slate-900/70 p-5 shadow-lg shadow-slate-950/20 md:col-span-2">
-        <p className="text-sm font-medium uppercase tracking-[0.16em] text-slate-400">Available Routes</p>
-        <div className="mt-4 flex flex-wrap gap-3">
+    <main className="min-h-screen bg-background text-foreground">
+      <div className="mx-auto grid max-w-6xl gap-5 px-4 py-8 lg:px-6">
+        <section className="rounded-lg border border-border bg-card p-6">
+          <Badge variant="success">{config.appEnv.toUpperCase()}</Badge>
+          <h1 className="mt-5 text-3xl font-semibold tracking-tight">{config.appName}</h1>
+          <p className="mt-2 max-w-3xl text-muted-foreground">
+            Balance converts receipts, invoices, claims, reviews, and audit evidence into a structured workspace.
+          </p>
+        </section>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader><CardTitle>Route</CardTitle></CardHeader>
+            <CardContent>
+              <p className="font-mono text-2xl font-semibold">{routePath}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{routeTitle}. {routeSummary}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>Release</CardTitle></CardHeader>
+            <CardContent>
+              <p className="font-mono text-2xl font-semibold">{config.appVersion}</p>
+              <p className="mt-2 text-sm text-muted-foreground">Commit {config.gitCommit} · Build {config.buildId}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>API</CardTitle></CardHeader>
+            <CardContent>
+              <p className="font-mono text-2xl font-semibold">{config.apiBasePath}/*</p>
+              <p className="mt-2 text-sm text-muted-foreground">Proxy-safe health checks and internal API forwarding.</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader><CardTitle>Available routes</CardTitle></CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-3">
           {routeLinks.map((item) => {
             const isActive = item.href === routePath;
 
             return (
-              <Link
+              <Button
                 key={item.href}
-                href={item.href}
-                className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                  isActive
-                    ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-100'
-                    : 'border-white/10 bg-white/5 text-slate-200 hover:border-sky-400/30 hover:bg-sky-400/10'
-                }`}
+                asChild
+                variant={isActive ? 'default' : 'secondary'}
+                size="sm"
               >
-                {item.label} · {item.href}
-              </Link>
+                <Link href={item.href}>{item.label} · {item.href}</Link>
+              </Button>
             );
           })}
-        </div>
-        <p className="mt-4 text-sm leading-6 text-slate-400">
-          The routes for <strong>/</strong>, <strong>/login</strong>, and <strong>/app</strong> are available today so the current
-          Balance platform stays easy to navigate while document intake, sign-in, and workspace features continue to expand.
-        </p>
-      </article>
-      <div className="md:col-span-2">
+            </div>
+            <p className="mt-4 text-sm leading-6 text-muted-foreground">
+              The primary home route is now the Balance entry and role gateway. Diagnostic panels remain a secondary support surface.
+            </p>
+          </CardContent>
+        </Card>
+
         <ApiStatusPanel healthPath={config.apiHealthPath} versionPath={config.apiVersionPath} />
       </div>
-    </AppShell>
+    </main>
   );
 }

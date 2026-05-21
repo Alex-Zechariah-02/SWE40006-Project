@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import type { UserRole } from '@balance/types';
 import { useAuth } from '../context/auth-context';
+import { homeForRole } from '../lib/auth-routing';
 
 interface RouteGuardProps {
   children: ReactNode;
@@ -19,23 +20,22 @@ export function RouteGuard({ children, allowedRoles }: RouteGuardProps) {
     if (loading) return;
     if (!user) { router.replace('/login'); return; }
     if (!allowedRoles.includes(user.role)) {
-      if (user.role === 'consumer') router.replace('/app');
-      else router.replace('/enterprise');
+      router.replace(homeForRole(user.role));
     }
   }, [user, loading, router, allowedRoles]);
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <p className="text-slate-400 text-sm">Loading…</p>
+      <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
+        <p className="text-sm text-muted-foreground">Loading…</p>
       </main>
     );
   }
 
   if (!user || !allowedRoles.includes(user.role)) {
     return (
-      <main className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <p className="text-slate-400 text-sm">Access denied.</p>
+      <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
+        <p className="text-sm text-muted-foreground">Access denied.</p>
       </main>
     );
   }
